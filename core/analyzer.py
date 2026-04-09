@@ -56,7 +56,7 @@ def analyze_plantilla(df, plantilla_names):
                     mc_combs = itertools.combinations(range(len(mc_disp)), f_mc)
                     dl_combs = itertools.combinations(range(len(dl_disp)), f_dl)
                     
-                    # Truco: usar product para evaluar TODAS las combinaciones puras
+                    # Usar product para evaluar TODAS las combinaciones puras
                     for c_df, c_mc, c_dl in itertools.product(df_combs, mc_combs, dl_combs):
                         best_df = df_disp.iloc[list(c_df)]
                         best_mc = mc_disp.iloc[list(c_mc)]
@@ -71,7 +71,7 @@ def analyze_plantilla(df, plantilla_names):
     # Ordenar todos los Onces teoricos posibles por WMA (forma proyectada total) de mayor a menor
     onces_posibles.sort(key=lambda x: x[1], reverse=True)
     
-    # Filtrar combinaciones idénticas (ya que iteramos, puede haber ordenación idéntica si hay jugadores repetidos, no es el caso en pandas, pero lo tomamos directo)
+    # Filtrar combinaciones idénticas
     top_5_onces = onces_posibles[:5]
     
     # Alertas de Venta
