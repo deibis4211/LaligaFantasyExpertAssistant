@@ -10,7 +10,7 @@ Herramienta analítica en Python para dominar LaLiga Fantasy. Utiliza Machine Le
   - `data_manager.py`: gestión de persistencia y snapshots históricos.
   - `scraper.py`: extractor de datos de la API oficial.
   - `analyzer.py`: optimizador de alineaciones y operaciones de mercado.
-  - `utils.py`: utilidades y normalización de nombres.
+  - `utils.py`: utilidades y normalización de nombres (con Fuzzy Search).
 - `data/`: directorio de persistencia y configuración.
   - `mi_plantilla.txt`: tu equipo actual.
   - `mercado_hoy.txt`: jugadores disponibles hoy.
@@ -23,7 +23,7 @@ Herramienta analítica en Python para dominar LaLiga Fantasy. Utiliza Machine Le
    ```bash
    pip install pandas requests xgboost scikit-learn joblib thefuzz tabulate
    ```
-2. **Configuración:** escribe los nombres de tus jugadores y los del mercado en sus respectivos archivos `.txt`.
+2. **Configuración:** escribe los nombres de tus jugadores y los del mercado en sus respectivos archivos `.txt`. Gracias al sistema de **Fuzzy Search**, no es necesario que los nombres sean exactos (ej: "Aspas" coincidirá con "Iago Aspas").
 3. **Ejecución:**
    ```bash
    python main.py
