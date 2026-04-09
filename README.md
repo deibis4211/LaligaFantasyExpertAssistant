@@ -33,5 +33,5 @@ Herramienta analítica en Python para dominar LaLiga Fantasy. Utiliza Machine Le
 
 - **[NUEVO] Motor de Predicción XGBoost (xP):** olvida las medias simples. El sistema entrena un modelo de IA cada vez que lo arrancas, analizando la racha reciente del jugador frente a su valor de mercado y posición para proyectar su puntuación exacta del próximo partido.
 - **[TITULARES] Optimización Táctica Total:** examina miles de combinaciones tácticas cruzando todas las formaciones legales (3-4-3, 4-4-2, 5-3-2, etc.). Te ofrece el **Top 5 de Onces Ideales** que maximizan los Puntos Esperados (xP).
-- **[MERCADO] Algoritmo de Fichajes Pro:** puntúa a los agentes libres de 0 a 100 evaluando: Forma Reciente (WMA 40%), Tendencia de Mercado a 48h (30%) y Ratio Rentabilidad Puntos/Precio (30%).
-- **[OPERACIONES] Alertas de Fuga de Valor:** detecta automáticamente caídas de valor bursátil (>2%) o desplomes de rendimiento proyectado para recomendar ventas inmediatas y proteger tu presupuesto.
+- **[MERCADO] Algoritmo de Fichajes:** puntúa a los jugadores en el mercado de 0 a 100 evaluando: Forma Reciente (WMA 40%), Tendencia de Mercado a 48h (30%) y Ratio Rentabilidad Puntos/Precio (30%).
+- **[OPERACIONES] Alertas de Fuga de Valor:** detecta automáticamente caídas de valor (>2%) o desplomes de rendimiento proyectado para recomendar ventas inmediatas y proteger tu presupuesto.
