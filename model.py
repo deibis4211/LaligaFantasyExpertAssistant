@@ -30,21 +30,40 @@ class FantasyPredictor:
         return df_ml
 
     def train(self, historical_df):
-        print("[*] Entrenando modelo XGBoost...")
+        print("[*] Entrenando modelo XGBoost con desglose de racha...")
         
-        # Simulación de features: Usaremos el valor y la posición por ahora
-        df_train = self._prepare_features(historical_df)
+        # Primero preparamos los encoders para tener consistencia
+        df_base = self._prepare_features(historical_df)
         
-        # Features: Equipo, Posición, Valor, Localía y RIVAL
-        features = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival']
-        X = df_train[features]
-        y = df_train['Puntos']
+        # Features base para el entrenamiento que el modelo usará
+        # Usamos la Media como una fuerte referencia para que la escala sea 0-20
+        self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival', 'Media']
+        
+        X_rows = []
+        y_rows = []
+        
+        # Desglosamos cada jugador en hasta 5 muestras (p1 a p5)
+        # Esto enseña al modelo que las características resultan en X puntos POR JORNADA
+        for _, row in df_base.iterrows():
+            for p_col in ['p1', 'p2', 'p3', 'p4', 'p5']:
+                puntos_match = row[p_col]
+                
+                # Para cada partido de la racha, el resto de datos se mantiene
+                x_sample = row[self.feature_cols].copy()
+                # En el pasado no sabemos quién fue el rival en el snapshot
+                # X_rows.append(x_sample)
+                X_rows.append(x_sample.values)
+                y_rows.append(puntos_match)
+        
+        X = pd.DataFrame(X_rows, columns=self.feature_cols)
+        y = pd.Series(y_rows)
         
         self.model = xgb.XGBRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=5,
-            objective='reg:squarederror'
+            n_estimators=200,
+            learning_rate=0.05,
+            max_depth=4,
+            objective='reg:squarederror',
+            random_state=42
         )
         
         self.model.fit(X, y)
@@ -52,7 +71,7 @@ class FantasyPredictor:
         # Guardar modelo y encoders
         joblib.dump(self.model, MODEL_FILE)
         joblib.dump(self.encoders, ENCODERS_FILE)
-        print("[*] Modelo entrenado y guardado correctamente.")
+        print("[*] Modelo entrenado correctamente (Escala: Puntos por jornada).")
 
     def load(self):
         if os.path.exists(MODEL_FILE) and os.path.exists(ENCODERS_FILE):
@@ -68,7 +87,13 @@ class FantasyPredictor:
                 return current_df['Media']
         
         df_pred = self._prepare_features(current_df)
-        features = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival']
+        
+        # Aseguramos que las columnas necesarias existan (especialmente Media)
+        if hasattr(self, 'feature_cols'):
+            features = self.feature_cols
+        else:
+            features = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival', 'Media']
+            
         X = df_pred[features]
         
         preds = self.model.predict(X)

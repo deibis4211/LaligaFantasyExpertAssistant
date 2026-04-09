@@ -28,31 +28,31 @@ def extract_fixtures(teams_raw):
     return fixtures
 
 def save_snapshot(df):
-    """Guarda el histórico persistiendo los datos obtenidos."""
+    """Guarda el histórico desglosando la racha de puntos (p1-p5)."""
     new_data = []
     
     for _, row in df.iterrows():
-        fitness = row.get('Puntos_Recientes', [])
-        for i, pts in enumerate(fitness):
-            new_data.append({
-                'ID': row['ID'],
-                'Nombre': row['Nombre'],
-                'Equipo': row['Equipo'],
-                'Posicion': row['Posicion'],
-                'Jornada_Relativa': i,
-                'Puntos': pts,
-                'Valor': row['Valor'],
-                'Rival': row.get('Rival', 'Desconocido'),
-                'Es_Local': row.get('Es_Local', 0)
-            })
+        fitness = row.get('Puntos_Recientes', [0,0,0,0,0])
+        # Asegurar longitud 5
+        while len(fitness) < 5: fitness.insert(0, 0)
+        fitness = fitness[-5:]
+        
+        new_data.append({
+            'ID': row['ID'],
+            'Nombre': row['Nombre'],
+            'Equipo': row['Equipo'],
+            'Posicion': row['Posicion'],
+            'Jornada_Relativa': 0, # Snapshot actual
+            'Puntos': row['Puntos'],
+            'Media': row['Media'],
+            'Valor': row['Valor'],
+            'Rival': row.get('Rival', 'Desconocido'),
+            'Es_Local': row.get('Es_Local', 0),
+            'p1': fitness[0], 'p2': fitness[1], 'p3': fitness[2], 'p4': fitness[3], 'p5': fitness[4]
+        })
     
     new_df = pd.DataFrame(new_data)
     
-    if os.path.exists(HISTORICAL_FILE):
-        old_df = pd.read_csv(HISTORICAL_FILE)
-        combined = pd.concat([old_df, new_df]).drop_duplicates(subset=['ID', 'Jornada_Relativa'], keep='last')
-        combined.to_csv(HISTORICAL_FILE, index=False)
-    else:
-        new_df.to_csv(HISTORICAL_FILE, index=False)
-    
+    # Sobrescribimos o añadimos (por ahora snapshot simple para entrenar bien la racha)
+    new_df.to_csv(HISTORICAL_FILE, index=False)
     return new_df
