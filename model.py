@@ -16,7 +16,7 @@ class FantasyPredictor:
     def _prepare_features(self, df):
         """Convierte columnas categóricas en numéricas."""
         df_ml = df.copy()
-        for col in ['Equipo', 'Posicion', 'Rival']:
+        for col in ['Equipo', 'Posicion']:
             if col not in self.encoders:
                 self.encoders[col] = LabelEncoder()
                 # Aseguramos que 'Desconocido' esté en las clases
@@ -37,7 +37,7 @@ class FantasyPredictor:
         
         # Features base para el entrenamiento que el modelo usará
         # Usamos la Media como una fuerte referencia para que la escala sea 0-20
-        self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival', 'Media']
+        self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Media']
         
         X_rows = []
         y_rows = []
@@ -92,7 +92,7 @@ class FantasyPredictor:
         if hasattr(self, 'feature_cols'):
             features = self.feature_cols
         else:
-            features = ['Equipo', 'Posicion', 'Valor', 'Es_Local', 'Rival', 'Media']
+            features = ['Equipo', 'Posicion', 'Valor', 'Media']
             
         X = df_pred[features]
         

@@ -42,12 +42,9 @@ def save_snapshot(df):
             'Nombre': row['Nombre'],
             'Equipo': row['Equipo'],
             'Posicion': row['Posicion'],
-            'Jornada_Relativa': 0, # Snapshot actual
             'Puntos': row['Puntos'],
             'Media': row['Media'],
             'Valor': row['Valor'],
-            'Rival': row.get('Rival', 'Desconocido'),
-            'Es_Local': row.get('Es_Local', 0),
             'p1': fitness[0], 'p2': fitness[1], 'p3': fitness[2], 'p4': fitness[3], 'p5': fitness[4]
         })
     

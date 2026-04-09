@@ -34,19 +34,7 @@ def main():
     print(f"[*] Jugadores leidos en plantilla: {len(plantilla)}")
     print(f"[*] Jugadores leidos en mercado: {len(mercado)}")
         
-    # 3. Enriquecer con contexto de la próxima jornada OFICIAL
-    from data_manager import extract_fixtures
-    fixtures = extract_fixtures(teams_raw)
-    
-    def get_match_context(row):
-        team = row['Equipo']
-        if team in fixtures:
-            rival, is_home = fixtures[team]
-            return pd.Series([rival, 1 if is_home else 0])
-        return pd.Series(['Desconocido', 0])
-
-    df[['Rival', 'Es_Local']] = df.apply(get_match_context, axis=1)
-    
+    # 3. Análisis de Plantilla y Mercado
     top_5_onces, alertas = analyze_plantilla(df, plantilla)
     recomendaciones = analyze_market(df, mercado, presupuesto)
     
