@@ -1,6 +1,7 @@
 import itertools
 import pandas as pd
 from utils import get_fuzzy_match
+from model import FantasyPredictor
 
 def analyze_plantilla(df, plantilla_names):
     plantilla_names_matched = []
@@ -15,17 +16,20 @@ def analyze_plantilla(df, plantilla_names):
     if mi_eq.empty:
         return [], pd.DataFrame()
     
-    weights = [0.1, 0.15, 0.2, 0.25, 0.3]
-    
-    def calc_wma(puntos_recientes):
-        if not puntos_recientes: return 0
-        p = puntos_recientes[-5:]
-        w = weights[-len(p):]
-        if sum(w) > 0:
-            w = [x/sum(w) for x in w]
-        return round(sum(x*y for x, y in zip(p, w)), 2)
-        
-    mi_eq['WMA_Forma'] = mi_eq['Puntos_Recientes'].apply(calc_wma)
+    predictor = FantasyPredictor()
+    if predictor.load():
+        mi_eq['xP'] = predictor.predict(mi_eq)
+    else:
+        # Fallback a WMA si no hay modelo entrenado aún
+        weights = [0.1, 0.15, 0.2, 0.25, 0.3]
+        def calc_wma(puntos_recientes):
+            if not puntos_recientes: return 0
+            p = puntos_recientes[-5:]
+            w = weights[-len(p):]
+            if sum(w) > 0:
+                w = [x/sum(w) for x in w]
+            return round(sum(x*y for x, y in zip(p, w)), 2)
+        mi_eq['xP'] = mi_eq['Puntos_Recientes'].apply(calc_wma)
     
     disponibles = mi_eq[~mi_eq['Estado'].isin(['Lesionado', 'Sancionado'])].copy()
     
@@ -59,10 +63,10 @@ def analyze_plantilla(df, plantilla_names):
                         best_dl = dl_disp.iloc[list(c_dl)]
                         
                         once_df = pd.concat([portero, best_df, best_mc, best_dl])
-                        total_wma = once_df['WMA_Forma'].sum()
+                        total_xp = once_df['xP'].sum()
                         form_name = f"{f_df}-{f_mc}-{f_dl}"
                         
-                        onces_posibles.append((form_name, round(total_wma, 2), once_df))
+                        onces_posibles.append((form_name, round(total_xp, 2), once_df))
     
     # Ordenar todos los Onces teoricos posibles por WMA (forma proyectada total) de mayor a menor
     onces_posibles.sort(key=lambda x: x[1], reverse=True)
@@ -74,13 +78,13 @@ def analyze_plantilla(df, plantilla_names):
     alertas = mi_eq[
         (mi_eq['Tendencia_48h_pct'] < -2.0) | 
         (mi_eq['Estado'].isin(['Lesionado', 'Sancionado'])) |
-        (mi_eq['WMA_Forma'] < mi_eq['Media'] * 0.7)
+        (mi_eq['xP'] < mi_eq['Media'] * 0.7)
     ].copy()
     
     alertas['Motivo_Venta'] = ""
     alertas.loc[alertas['Tendencia_48h_pct'] < -2.0, 'Motivo_Venta'] += "Bajada fuerte de valor. "
     alertas.loc[alertas['Estado'].isin(['Lesionado', 'Sancionado']), 'Motivo_Venta'] += "No disponible (Baja). "
-    alertas.loc[alertas['WMA_Forma'] < alertas['Media'] * 0.7, 'Motivo_Venta'] += "Bajo rendimiento reciente. "
+    alertas.loc[alertas['xP'] < alertas['Media'] * 0.7, 'Motivo_Venta'] += "Bajo rendimiento proyectado. "
     
     return top_5_onces, alertas
 

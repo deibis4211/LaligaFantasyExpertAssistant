@@ -1,6 +1,9 @@
 from scraper import scrape_players
 from analyzer import analyze_plantilla, analyze_market
 from utils import load_user_list
+from data_manager import save_snapshot
+from model import FantasyPredictor
+import pandas as pd
 from tabulate import tabulate
 
 def main():
@@ -8,21 +11,42 @@ def main():
     print("LALIGA FANTASY EXPERT ASSISTANT")
     print("="*65)
     
-    df = scrape_players()
-    
+    df, teams_map, teams_raw = scrape_players()
     plantilla_file = 'mi_plantilla.txt'
     mercado_file = 'mercado_hoy.txt'
     presupuesto = 18000000
+
+    if df.empty:
+        print("[!] No se pudo obtener la base de datos.")
+        return
+        
+    # --- ML PIPELINE ---
+    # 1. Guardar histórico
+    hist_df = save_snapshot(df)
+    
+    # 2. Entrenar/Cargar Modelo
+    predictor = FantasyPredictor()
+    predictor.train(hist_df) 
     
     plantilla = load_user_list(plantilla_file)
     mercado = load_user_list(mercado_file)
         
     print(f"[*] Jugadores leidos en plantilla: {len(plantilla)}")
     print(f"[*] Jugadores leidos en mercado: {len(mercado)}")
-    
-    if df.empty:
-        return
         
+    # 3. Enriquecer con contexto de la próxima jornada OFICIAL
+    from data_manager import extract_fixtures
+    fixtures = extract_fixtures(teams_raw)
+    
+    def get_match_context(row):
+        team = row['Equipo']
+        if team in fixtures:
+            rival, is_home = fixtures[team]
+            return pd.Series([rival, 1 if is_home else 0])
+        return pd.Series(['Desconocido', 0])
+
+    df[['Rival', 'Es_Local']] = df.apply(get_match_context, axis=1)
+    
     top_5_onces, alertas = analyze_plantilla(df, plantilla)
     recomendaciones = analyze_market(df, mercado, presupuesto)
     
@@ -30,10 +54,10 @@ def main():
     print(" [TITULARES] TOP 5 FORMACIONES IDEALES PARA LA JORNADA ")
     print("="*65)
     if top_5_onces:
-        print("Filtrados lesionados y sancionados. Optimizando WMA (Estado Forma).\n")
-        for idx, (f_name, wma_tot, max_once) in enumerate(top_5_onces):
-            print(f"--- OPCION #{idx+1} | FORMACION: {f_name} | FORMA ESPERADA (WMA): {wma_tot} pts ---")
-            view_once = max_once[['Nombre', 'Equipo', 'Posicion', 'Estado', 'Media', 'WMA_Forma', 'Valor']]
+        print("Filtrados lesionados y sancionados. Usando predicciones XGBoost (xP).\n")
+        for idx, (f_name, xp_tot, max_once) in enumerate(top_5_onces):
+            print(f"--- OPCION #{idx+1} | FORMACION: {f_name} | PUNTOS PROYECTADOS (XGB): {xp_tot} ---")
+            view_once = max_once[['Nombre', 'Equipo', 'Posicion', 'Estado', 'Media', 'xP', 'Valor']]
             print(tabulate(view_once, headers='keys', tablefmt='psql', showindex=False))
             print() # Espacio en blanco entre onces
     else:
@@ -55,7 +79,7 @@ def main():
     print(" [OPERACIONES] ALERTAS DE VENTA RECOMENDADAS ")
     print("="*65)
     if not alertas.empty:
-        view_alertas = alertas[['Nombre', 'Estado', 'Tendencia_48h_pct', 'WMA_Forma', 'Motivo_Venta']]
+        view_alertas = alertas[['Nombre', 'Estado', 'Tendencia_48h_pct', 'xP', 'Motivo_Venta']]
         print(tabulate(view_alertas, headers='keys', tablefmt='psql', showindex=False))
     else:
         print("Tu equipo actual esta sano, en forma y no pierde valor drasticamente. Todo en orden!")
