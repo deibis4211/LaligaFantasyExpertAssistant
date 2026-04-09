@@ -1,7 +1,7 @@
 import itertools
 import pandas as pd
-from utils import get_fuzzy_match
-from model import FantasyPredictor
+from core.utils import get_fuzzy_match
+from core.model import FantasyPredictor
 
 def analyze_plantilla(df, plantilla_names):
     plantilla_names_matched = []

@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-HISTORICAL_FILE = 'historico_puntos.csv'
+HISTORICAL_FILE = 'data/historico_puntos.csv'
 
 def extract_fixtures(teams_raw):
     """Extrae el calendario real desde la metadata de la API de Biwenger."""

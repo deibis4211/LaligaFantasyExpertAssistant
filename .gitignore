@@ -13,8 +13,8 @@ env/
 
 # (Opcional) Ignorar los archivos txt locales si no quieres subir tu equipo a internet
 # Descomenta las lineas de abajo si prefieres que tus txt sean privados:
-# mi_plantilla.txt
-# mercado_hoy.txt
+# data/mi_plantilla.txt
+# data/mercado_hoy.txt
 
 # Ignorar archivos JSON de test o temporales
 *.json

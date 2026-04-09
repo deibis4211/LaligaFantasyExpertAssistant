@@ -5,8 +5,8 @@ from sklearn.preprocessing import LabelEncoder
 import os
 import joblib
 
-MODEL_FILE = 'model_xgboost.pkl'
-ENCODERS_FILE = 'encoders.pkl'
+MODEL_FILE = 'data/model_xgboost.pkl'
+ENCODERS_FILE = 'data/encoders.pkl'
 
 class FantasyPredictor:
     def __init__(self):

@@ -5,13 +5,17 @@ Herramienta analítica premium en Python para dominar LaLiga Fantasy. Utiliza Ma
 ## Arquitectura del Sistema
 
 - `main.py`: Director de orquesta. Orquestra la descarga, entrenamiento e inferencia.
-- `model.py`: **Motor de ML**. Implementa un regresor XGBoost entrenado dinámicamente con desgloses de rendimiento por jornada.
-- `data_manager.py`: Gestión de persistencia. Maneja snapshots históricos y emparejamiento de enfrentamientos (fixtures).
-- `scraper.py`: Extractor de datos. Se conecta a la API oficial de Biwenger para obtener estadísticas de +500 jugadores en tiempo real.
-- `analyzer.py`: Cerebro estratégico. Calcula el xP (Expected Points) de cada formación y filtra estados físicos (lesiones/sanciones).
-- `utils.py`: Utilidades y normalización de nombres mediante lógica difusa (`thefuzz`).
-- `mi_plantilla.txt`: Tu equipo actual (puedes poner nombres aproximados, el sistema los corregirá).
-- `mercado_hoy.txt`: Listado de jugadores disponibles para subasta hoy.
+- `core/`: Directorio con la lógica del sistema.
+  - `model.py`: **Motor de ML**. Implementa un regresor XGBoost.
+  - `data_manager.py`: Gestión de persistencia y snapshots históricos.
+  - `scraper.py`: Extractor de datos de la API oficial.
+  - `analyzer.py`: Cerebro estratégico y optimizador de alineaciones.
+  - `utils.py`: Utilidades y normalización de nombres.
+- `data/`: Directorio de persistencia y configuración.
+  - `mi_plantilla.txt`: Tu equipo actual.
+  - `mercado_hoy.txt`: Jugadores disponibles hoy.
+  - `historico_puntos.csv`: Base de datos histórica.
+  - `model_xgboost.pkl`: Binario del modelo entrenado.
 
 ## Instrucciones de Uso
 

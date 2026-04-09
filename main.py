@@ -1,8 +1,8 @@
-from scraper import scrape_players
-from analyzer import analyze_plantilla, analyze_market
-from utils import load_user_list
-from data_manager import save_snapshot
-from model import FantasyPredictor
+from core.scraper import scrape_players
+from core.analyzer import analyze_plantilla, analyze_market
+from core.utils import load_user_list
+from core.data_manager import save_snapshot
+from core.model import FantasyPredictor
 import pandas as pd
 from tabulate import tabulate
 
@@ -12,8 +12,8 @@ def main():
     print("="*65)
     
     df, teams_map, teams_raw = scrape_players()
-    plantilla_file = 'mi_plantilla.txt'
-    mercado_file = 'mercado_hoy.txt'
+    plantilla_file = 'data/mi_plantilla.txt'
+    mercado_file = 'data/mercado_hoy.txt'
     presupuesto = 18000000
 
     if df.empty:
