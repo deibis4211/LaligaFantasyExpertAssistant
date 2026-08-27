@@ -14,6 +14,8 @@ env/
 # Local data
 data/mi_plantilla.txt
 data/mercado_hoy.txt
+data/historico_puntos.csv
+data/*.pkl
 
 # Ignorar archivos JSON de test o temporales
 *.json
