@@ -17,11 +17,11 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 
 ## Funcionalidades Principales
 
-- **Motor Multi-Modelo XGBoost (xP):** Entrena **4 modelos de IA independientes** especializados por posición (`PT`, `DF`, `MC`, `DL`). Analiza la racha ponderada (WMA), la tendencia de aceleración, la consistencia, el próximo rival y la localía.
-- **Onces Ideales con Tablero Táctico 2D:** Examina miles de combinaciones tácticas cruzando todas las formaciones legales. La interfaz web renderiza un campo de fútbol interactivo en el que se ubican los jugadores según el esquema elegido.
-- **Algoritmo de Fichajes:** Puntúa a los jugadores disponibles del mercado de 0 a 100 evaluando la Forma Reciente (WMA 40%), Tendencia de Mercado (30%) y Rentabilidad (30%).
-- **Alertas de Fuga de Valor:** Detecta automáticamente caídas de valor (>2%) o lesionados para recomendarte ventas inmediatas en un panel de alertas visual.
-- **Base de Datos Acumulativa de Aprendizaje:** Guarda el histórico en `data/historico_aprendizaje.csv` asociando predicciones pasadas con resultados exactos finales conforme avanzan las jornadas para refinar el modelo.
+- **Motor Multi-Modelo XGBoost (xP):** entrena **4 modelos de IA independientes** especializados por posición (`PT`, `DF`, `MC`, `DL`). Analiza la racha ponderada (WMA), la tendencia de aceleración, la consistencia, el próximo rival y la localía.
+- **Onces Ideales con Tablero Táctico 2D:** examina miles de combinaciones tácticas cruzando todas las formaciones legales. La interfaz web renderiza un campo de fútbol interactivo en el que se ubican los jugadores según el esquema elegido.
+- **Algoritmo de Fichajes:** puntúa a los jugadores disponibles del mercado de 0 a 100 evaluando la Forma Reciente (WMA 40%), Tendencia de Mercado (30%) y Rentabilidad (30%).
+- **Alertas de Fuga de Valor:** detecta automáticamente caídas de valor (>2%) o lesionados para recomendarte ventas inmediatas en un panel de alertas visual.
+- **Base de Datos Acumulativa de Aprendizaje:** guarda el histórico en `data/historico_aprendizaje.csv` asociando predicciones pasadas con resultados exactos finales conforme avanzan las jornadas para refinar el modelo.
 
 ---
 
