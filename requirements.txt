@@ -1,0 +1,9 @@
+pandas
+requests
+xgboost
+scikit-learn
+joblib
+thefuzz
+tabulate
+fastapi
+uvicorn

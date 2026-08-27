@@ -57,7 +57,7 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 ### 1. Instalación de dependencias
 Asegúrate de tener Python 3.11+ y Node.js instalados en tu sistema. Luego, instala los requisitos del backend:
 ```bash
-pip install pandas requests xgboost scikit-learn joblib thefuzz tabulate fastapi uvicorn
+pip install -r requirements.txt
 ```
 
 Y las dependencias del frontend (se instalan automáticamente con el script de arranque, o manualmente):
