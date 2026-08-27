@@ -5,96 +5,143 @@ from sklearn.preprocessing import LabelEncoder
 import os
 import joblib
 
-MODEL_FILE = 'data/model_xgboost.pkl'
 ENCODERS_FILE = 'data/encoders.pkl'
 
 class FantasyPredictor:
     def __init__(self):
-        self.model = None
+        self.models = {}
         self.encoders = {}
         
-    def _prepare_features(self, df):
-        """Convierte columnas categóricas en numéricas."""
+    def _prepare_encoders(self, df):
+        """Entrena y aplica LabelEncoders en base a columnas."""
         df_ml = df.copy()
-        for col in ['Equipo', 'Posicion']:
-            if col not in self.encoders:
-                self.encoders[col] = LabelEncoder()
-                # Aseguramos que 'Desconocido' esté en las clases
-                vals = df_ml[col].astype(str).tolist()
-                if 'Desconocido' not in vals: vals.append('Desconocido')
-                self.encoders[col].fit(vals)
+        df_ml['Posicion_raw'] = df_ml['Posicion'].astype(str)
+        
+        # LabelEncoder único para Equipo y Rival para asegurar consistencia
+        if 'TeamEncoder' not in self.encoders:
+            self.encoders['TeamEncoder'] = LabelEncoder()
+            todos_equipos = pd.concat([df_ml['Equipo'], df_ml['Rival']]).astype(str).tolist()
+            if 'Desconocido' not in todos_equipos: todos_equipos.append('Desconocido')
+            self.encoders['TeamEncoder'].fit(todos_equipos)
+            
+        if 'Posicion' not in self.encoders:
+            self.encoders['Posicion'] = LabelEncoder()
+            posiciones = df_ml['Posicion'].astype(str).tolist()
+            if 'UNK' not in posiciones: posiciones.append('UNK')
+            self.encoders['Posicion'].fit(posiciones)
+            
+        df_ml['Equipo'] = df_ml['Equipo'].astype(str).map(
+            lambda x: self.encoders['TeamEncoder'].transform([x])[0] if x in self.encoders['TeamEncoder'].classes_ else self.encoders['TeamEncoder'].transform(['Desconocido'])[0]
+        )
+        df_ml['Rival'] = df_ml['Rival'].astype(str).map(
+            lambda x: self.encoders['TeamEncoder'].transform([x])[0] if x in self.encoders['TeamEncoder'].classes_ else self.encoders['TeamEncoder'].transform(['Desconocido'])[0]
+        )
+        df_ml['Posicion'] = df_ml['Posicion'].astype(str).map(
+            lambda x: self.encoders['Posicion'].transform([x])[0] if x in self.encoders['Posicion'].classes_ else self.encoders['Posicion'].transform(['UNK'])[0]
+        )
+        return df_ml
+
+    def _prepare_features(self, df):
+        """Prepara las variables avanzadas y codificaciones para la predicción."""
+        df_ml = df.copy()
+        df_ml['Posicion_raw'] = df_ml['Posicion'].astype(str)
+        
+        # Calcular variables avanzadas de forma a partir de Puntos_Recientes si es necesario
+        if 'WMA' not in df_ml.columns and 'Puntos_Recientes' in df_ml.columns:
+            from core.data_manager import calculate_wma, calculate_trend, calculate_volatility
+            wma_list, trend_list, vol_list = [], [], []
+            for _, r in df_ml.iterrows():
+                fitness = r['Puntos_Recientes']
+                if not isinstance(fitness, list): fitness = [0,0,0,0,0]
+                while len(fitness) < 5: fitness.insert(0, 0)
+                fitness = fitness[-5:]
                 
-            df_ml[col] = df_ml[col].astype(str).map(
-                lambda x: self.encoders[col].transform([x])[0] if x in self.encoders[col].classes_ else self.encoders[col].transform(['Desconocido'])[0]
-            )
+                wma_list.append(calculate_wma(fitness))
+                trend_list.append(calculate_trend(fitness))
+                vol_list.append(calculate_volatility(fitness))
+            df_ml['WMA'] = wma_list
+            df_ml['Tendencia'] = trend_list
+            df_ml['Volatilidad'] = vol_list
+            
+        if 'Rival' not in df_ml.columns:
+            df_ml['Rival'] = 'Desconocido'
+        if 'Localia' not in df_ml.columns:
+            df_ml['Localia'] = 0.5
+            
+        df_ml['Equipo'] = df_ml['Equipo'].astype(str).map(
+            lambda x: self.encoders['TeamEncoder'].transform([x])[0] if x in self.encoders['TeamEncoder'].classes_ else self.encoders['TeamEncoder'].transform(['Desconocido'])[0]
+        )
+        df_ml['Rival'] = df_ml['Rival'].astype(str).map(
+            lambda x: self.encoders['TeamEncoder'].transform([x])[0] if x in self.encoders['TeamEncoder'].classes_ else self.encoders['TeamEncoder'].transform(['Desconocido'])[0]
+        )
+        df_ml['Posicion'] = df_ml['Posicion'].astype(str).map(
+            lambda x: self.encoders['Posicion'].transform([x])[0] if x in self.encoders['Posicion'].classes_ else self.encoders['Posicion'].transform(['UNK'])[0]
+        )
         return df_ml
 
     def train(self, historical_df):
-        print("[*] Entrenando modelo XGBoost con desglose de racha...")
+        print("[*] Entrenando modelos XGBoost especializados por posición (4 en total)...")
         
-        # Primero preparamos los encoders para tener consistencia
-        df_base = self._prepare_features(historical_df)
+        # Preparar encoders
+        df_base = self._prepare_encoders(historical_df)
+        self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Media', 'WMA', 'Tendencia', 'Volatilidad', 'Rival', 'Localia']
         
-        # Features base para el entrenamiento que el modelo usará
-        # Usamos la Media como una fuerte referencia para que la escala sea 0-20
-        self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Media']
-        
-        X_rows = []
-        y_rows = []
-        
-        # Desglosamos cada jugador en hasta 5 muestras (p1 a p5)
-        # Esto enseña al modelo que las características resultan en X puntos POR JORNADA
-        for _, row in df_base.iterrows():
-            for p_col in ['p1', 'p2', 'p3', 'p4', 'p5']:
-                puntos_match = row[p_col]
-                
-                # Para cada partido de la racha, el resto de datos se mantiene
-                x_sample = row[self.feature_cols].copy()
-                # En el pasado no sabemos quién fue el rival en el snapshot
-                # X_rows.append(x_sample)
-                X_rows.append(x_sample.values)
-                y_rows.append(puntos_match)
-        
-        X = pd.DataFrame(X_rows, columns=self.feature_cols)
-        y = pd.Series(y_rows)
-        
-        self.model = xgb.XGBRegressor(
-            n_estimators=200,
-            learning_rate=0.05,
-            max_depth=4,
-            objective='reg:squarederror',
-            random_state=42
-        )
-        
-        self.model.fit(X, y)
-        
-        # Guardar modelo y encoders
-        joblib.dump(self.model, MODEL_FILE)
+        positions = ['PT', 'DF', 'MC', 'DL']
+        for pos in positions:
+            df_pos = df_base[df_base['Posicion_raw'] == pos].copy()
+            
+            if not df_pos.empty:
+                X = df_pos[self.feature_cols]
+                y = df_pos['Target']
+                model = xgb.XGBRegressor(
+                    n_estimators=200,
+                    learning_rate=0.05,
+                    max_depth=4,
+                    objective='reg:squarederror',
+                    random_state=42
+                )
+                model.fit(X, y)
+                file_path = f'data/model_{pos.lower()}.pkl'
+                joblib.dump(model, file_path)
+                self.models[pos] = model
+                print(f"[*] Modelo para {pos} entrenado correctamente.")
+            else:
+                print(f"[!] Sin datos suficientes para entrenar el modelo de {pos}.")
+            
+        # Guardar codificadores
         joblib.dump(self.encoders, ENCODERS_FILE)
-        print("[*] Modelo entrenado correctamente (Escala: Puntos por jornada).")
 
     def load(self):
-        if os.path.exists(MODEL_FILE) and os.path.exists(ENCODERS_FILE):
-            self.model = joblib.load(MODEL_FILE)
+        positions = ['PT', 'DF', 'MC', 'DL']
+        loaded_count = 0
+        for pos in positions:
+            file_path = f'data/model_{pos.lower()}.pkl'
+            if os.path.exists(file_path):
+                self.models[pos] = joblib.load(file_path)
+                loaded_count += 1
+                
+        if loaded_count == len(positions) and os.path.exists(ENCODERS_FILE):
             self.encoders = joblib.load(ENCODERS_FILE)
             return True
         return False
 
     def predict(self, current_df):
-        if self.model is None:
+        positions = ['PT', 'DF', 'MC', 'DL']
+        if len(self.models) < len(positions):
             if not self.load():
-                print("[!] No hay modelo entrenado. Usando media simple como fallback.")
+                print("[!] No hay modelos entrenados. Usando media simple como fallback.")
                 return current_df['Media']
         
         df_pred = self._prepare_features(current_df)
+        features = ['Equipo', 'Posicion', 'Valor', 'Media', 'WMA', 'Tendencia', 'Volatilidad', 'Rival', 'Localia']
         
-        # Aseguramos que las columnas necesarias existan (especialmente Media)
-        if hasattr(self, 'feature_cols'):
-            features = self.feature_cols
-        else:
-            features = ['Equipo', 'Posicion', 'Valor', 'Media']
-            
-        X = df_pred[features]
+        preds = np.zeros(len(df_pred))
         
-        preds = self.model.predict(X)
-        return np.maximum(0, preds) # No queremos puntos negativos proyectados
+        for pos in positions:
+            is_pos = df_pred['Posicion_raw'] == pos
+            if is_pos.any() and pos in self.models:
+                preds[is_pos] = self.models[pos].predict(df_pred.loc[is_pos, features])
+            elif is_pos.any():
+                preds[is_pos] = df_pred.loc[is_pos, 'Media']
+                
+        return np.maximum(0, preds)

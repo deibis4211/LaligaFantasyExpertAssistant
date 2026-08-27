@@ -22,7 +22,7 @@ def main():
         
     # --- ML PIPELINE ---
     # 1. Guardar histórico
-    hist_df = save_snapshot(df)
+    hist_df = save_snapshot(df, teams_raw)
     
     # 2. Entrenar/Cargar Modelo
     predictor = FantasyPredictor()
