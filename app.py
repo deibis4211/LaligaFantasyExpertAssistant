@@ -109,6 +109,29 @@ def get_dashboard_data():
         "onces_ideales": onces_response
     }
 
+@app.get("/api/players/all")
+def get_all_players():
+    df, _, _ = initialize_data()
+    df_all = df.copy()
+    
+    predictor = FantasyPredictor()
+    if predictor.load():
+        try:
+            df_all['xP'] = predictor.predict(df_all)
+        except Exception as e:
+            print(f"[!] Error prediciendo xP para todos los jugadores: {e}")
+            df_all['xP'] = df_all['WMA']
+    else:
+        df_all['xP'] = df_all['WMA']
+        
+    teams_list = sorted(list(df_all['Equipo'].unique()))
+    players_list = df_all.to_dict('records')
+    
+    return {
+        "teams": teams_list,
+        "players": players_list
+    }
+
 @app.post("/api/refresh")
 def refresh_data():
     try:
