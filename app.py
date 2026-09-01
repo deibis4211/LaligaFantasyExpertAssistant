@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +29,55 @@ DATA_CACHE = {
 
 PLANTILLA_FILE = 'data/mi_plantilla.txt'
 MERCADO_FILE = 'data/mercado_hoy.txt'
+LEAGUES_FILE = 'data/leagues.json'
 PRESUPUESTO = 18000000
+
+# Helper to manage leagues.json
+def load_leagues_data():
+    if not os.path.exists(LEAGUES_FILE):
+        # Initial migration from txt files
+        p_list = load_user_list(PLANTILLA_FILE)
+        m_list = load_user_list(MERCADO_FILE)
+        initial_data = {
+            "active": "Liga Principal",
+            "leagues": {
+                "Liga Principal": {
+                    "plantilla": p_list,
+                    "mercado": m_list
+                }
+            }
+        }
+        save_leagues_data(initial_data)
+        return initial_data
+    
+    try:
+        with open(LEAGUES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        p_list = load_user_list(PLANTILLA_FILE)
+        m_list = load_user_list(MERCADO_FILE)
+        return {
+            "active": "Liga Principal",
+            "leagues": {
+                "Liga Principal": {
+                    "plantilla": p_list,
+                    "mercado": m_list
+                }
+            }
+        }
+
+def save_leagues_data(leagues_data):
+    with open(LEAGUES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(leagues_data, f, ensure_ascii=False, indent=2)
+        
+    # Sync current active league to txt files for backwards compatibility
+    active_name = leagues_data.get("active", "Liga Principal")
+    active_league = leagues_data.get("leagues", {}).get(active_name, {"plantilla": [], "mercado": []})
+    
+    with open(PLANTILLA_FILE, 'w', encoding='utf-8') as f:
+        f.write("\n".join(active_league.get("plantilla", [])))
+    with open(MERCADO_FILE, 'w', encoding='utf-8') as f:
+        f.write("\n".join(active_league.get("mercado", [])))
 
 def initialize_data(force_refresh=False):
     if force_refresh or DATA_CACHE["df"] is None:
@@ -48,8 +97,8 @@ def initialize_data(force_refresh=False):
 
 @app.on_event("startup")
 async def startup_event():
-    # Cargar datos al iniciar
     try:
+        load_leagues_data()
         initialize_data()
     except Exception as e:
         print(f"[!] Error en inicialización de arranque: {e}")
@@ -58,8 +107,12 @@ async def startup_event():
 def get_dashboard_data():
     df, _, teams_raw = initialize_data()
     
-    plantilla_names = load_user_list(PLANTILLA_FILE)
-    mercado_names = load_user_list(MERCADO_FILE)
+    leagues_data = load_leagues_data()
+    active_name = leagues_data.get("active", "Liga Principal")
+    active_league = leagues_data.get("leagues", {}).get(active_name, {"plantilla": [], "mercado": []})
+    
+    plantilla_names = active_league.get("plantilla", [])
+    mercado_names = active_league.get("mercado", [])
     
     # Análisis de plantilla y mercado
     top_5_onces, alertas = analyze_plantilla(df, plantilla_names)
@@ -102,6 +155,7 @@ def get_dashboard_data():
         })
         
     return {
+        "active_league": active_name,
         "presupuesto": PRESUPUESTO,
         "plantilla": plantilla_list,
         "mercado": recomendaciones.to_dict('records') if not recomendaciones.empty else [],
@@ -132,6 +186,74 @@ def get_all_players():
         "players": players_list
     }
 
+@app.get("/api/leagues")
+def get_leagues():
+    data = load_leagues_data()
+    return {
+        "active": data.get("active", "Liga Principal"),
+        "leagues": list(data.get("leagues", {}).keys())
+    }
+
+@app.post("/api/leagues/switch")
+def switch_league(payload: dict):
+    target_name = payload.get("name")
+    data = load_leagues_data()
+    if target_name not in data.get("leagues", {}):
+        raise HTTPException(status_code=404, detail="La liga especificada no existe.")
+    
+    data["active"] = target_name
+    save_leagues_data(data)
+    return {"status": "success", "active": target_name}
+
+@app.post("/api/leagues/create")
+def create_league(payload: dict):
+    new_name = payload.get("name", "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="El nombre de la liga no puede estar vacío.")
+    
+    data = load_leagues_data()
+    if new_name in data.get("leagues", {}):
+        raise HTTPException(status_code=400, detail="Ya existe una liga con ese nombre.")
+    
+    data["leagues"][new_name] = {"plantilla": [], "mercado": []}
+    data["active"] = new_name
+    save_leagues_data(data)
+    return {"status": "success", "active": new_name}
+
+@app.post("/api/leagues/delete")
+def delete_league(payload: dict):
+    target_name = payload.get("name")
+    data = load_leagues_data()
+    
+    leagues_dict = data.get("leagues", {})
+    if len(leagues_dict) <= 1:
+        raise HTTPException(status_code=400, detail="No puedes eliminar la única liga disponible.")
+    
+    if target_name in leagues_dict:
+        del leagues_dict[target_name]
+        if data["active"] == target_name:
+            data["active"] = list(leagues_dict.keys())[0]
+        save_leagues_data(data)
+        return {"status": "success", "active": data["active"]}
+    
+    raise HTTPException(status_code=404, detail="Liga no encontrada.")
+
+@app.post("/api/clear")
+def clear_list(payload: dict):
+    target = payload.get("target") # 'plantilla' or 'mercado'
+    data = load_leagues_data()
+    active_name = data.get("active", "Liga Principal")
+    
+    if target == "plantilla":
+        data["leagues"][active_name]["plantilla"] = []
+    elif target == "mercado":
+        data["leagues"][active_name]["mercado"] = []
+    else:
+        raise HTTPException(status_code=400, detail="Target debe ser 'plantilla' o 'mercado'.")
+        
+    save_leagues_data(data)
+    return {"status": "success"}
+
 @app.post("/api/refresh")
 def refresh_data():
     try:
@@ -142,22 +264,30 @@ def refresh_data():
 
 @app.get("/api/config")
 def get_config():
-    # Retorna nombres de plantilla y mercado para editarlos desde la UI
+    data = load_leagues_data()
+    active_name = data.get("active", "Liga Principal")
+    active_league = data.get("leagues", {}).get(active_name, {"plantilla": [], "mercado": []})
     return {
-        "plantilla": load_user_list(PLANTILLA_FILE),
-        "mercado": load_user_list(MERCADO_FILE)
+        "active_league": active_name,
+        "plantilla": active_league.get("plantilla", []),
+        "mercado": active_league.get("mercado", [])
     }
 
 @app.post("/api/config")
 def save_config(config: dict):
-    # Permite guardar cambios a plantilla y mercado desde la UI
     try:
+        data = load_leagues_data()
+        active_name = data.get("active", "Liga Principal")
+        
+        if active_name not in data["leagues"]:
+            data["leagues"][active_name] = {"plantilla": [], "mercado": []}
+            
         if "plantilla" in config:
-            with open(PLANTILLA_FILE, 'w', encoding='utf-8') as f:
-                f.write("\n".join(config["plantilla"]))
+            data["leagues"][active_name]["plantilla"] = config["plantilla"]
         if "mercado" in config:
-            with open(MERCADO_FILE, 'w', encoding='utf-8') as f:
-                f.write("\n".join(config["mercado"]))
+            data["leagues"][active_name]["mercado"] = config["mercado"]
+            
+        save_leagues_data(data)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

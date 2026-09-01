@@ -28,7 +28,7 @@ const getInitials = (name) => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-// Player Avatar component: tries official CDN photo, falls back to elegant FIFA-style badge avatar
+// Player Avatar component: tries official CDN photo, falls back to initials badge
 const PlayerAvatar = ({ id, name, pos, className = "card-avatar" }) => {
   const [imgError, setImgError] = useState(false);
   const photoUrl = `https://cf.biwenger.com/api/v2/players/${id}/image`;
@@ -77,6 +77,12 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
+  // Multi-League state
+  const [leaguesList, setLeaguesList] = useState([]);
+  const [activeLeague, setActiveLeague] = useState('Liga Principal');
+  const [showCreateLeagueModal, setShowCreateLeagueModal] = useState(false);
+  const [newLeagueName, setNewLeagueName] = useState('');
+
   // All players database for Explorer & Autocomplete
   const [allPlayersData, setAllPlayersData] = useState({ players: [], teams: [] });
   const [loadingExplorer, setLoadingExplorer] = useState(false);
@@ -101,12 +107,17 @@ function App() {
       const res = await fetch(`${API_BASE}/data`);
       const json = await res.json();
       setData(json);
+      if (json.active_league) setActiveLeague(json.active_league);
       
-      // Load config list
+      // Load config & leagues list
       const configRes = await fetch(`${API_BASE}/config`);
       const configJson = await configRes.json();
       setConfigPlantilla(configJson.plantilla || []);
       setConfigMercado(configJson.mercado || []);
+
+      const leaguesRes = await fetch(`${API_BASE}/leagues`);
+      const leaguesJson = await leaguesRes.json();
+      setLeaguesList(leaguesJson.leagues || []);
     } catch (err) {
       console.error("Error cargando datos:", err);
     } finally {
@@ -144,6 +155,92 @@ function App() {
       }
     } catch (err) {
       console.error("Error al refrescar:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleSwitchLeague = async (leagueName) => {
+    if (leagueName === activeLeague) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${API_BASE}/leagues/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: leagueName })
+      });
+      if (res.ok) {
+        await fetchData();
+      }
+    } catch (err) {
+      console.error("Error cambiando de liga:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleCreateLeague = async () => {
+    if (!newLeagueName.trim()) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${API_BASE}/leagues/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newLeagueName.trim() })
+      });
+      if (res.ok) {
+        setNewLeagueName('');
+        setShowCreateLeagueModal(false);
+        await fetchData();
+      } else {
+        const errJson = await res.json();
+        alert(errJson.detail || "Error al crear la liga.");
+      }
+    } catch (err) {
+      console.error("Error creando liga:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleDeleteLeague = async (leagueName) => {
+    if (!window.confirm(`¿Estás seguro de que quieres eliminar la liga "${leagueName}"?`)) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${API_BASE}/leagues/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: leagueName })
+      });
+      if (res.ok) {
+        await fetchData();
+      } else {
+        const errJson = await res.json();
+        alert(errJson.detail || "Error al eliminar la liga.");
+      }
+    } catch (err) {
+      console.error("Error eliminando liga:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleClearList = async (target) => {
+    const targetLabel = target === 'plantilla' ? 'tu plantilla' : 'el mercado de hoy';
+    if (!window.confirm(`⚠️ ¿Seguro que quieres vaciar por completo ${targetLabel} de la liga "${activeLeague}"?`)) return;
+    
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${API_BASE}/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target })
+      });
+      if (res.ok) {
+        await fetchData();
+      }
+    } catch (err) {
+      console.error("Error vaciando lista:", err);
     } finally {
       setRefreshing(false);
     }
@@ -279,6 +376,31 @@ function App() {
         </div>
       )}
 
+      {/* Modal Crear Nueva Liga */}
+      {showCreateLeagueModal && (
+        <div className="modal-backdrop" onClick={() => setShowCreateLeagueModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>🏆 Crear Nueva Liga Fantasy</h3>
+              <button className="btn-close-modal" onClick={() => setShowCreateLeagueModal(false)}>✖</button>
+            </div>
+            <p className="subtitle">Introduce el nombre para tu nueva liga (ej. *"Liga del Trabajo"*). Tendrás una plantilla y mercado independientes.</p>
+            <input 
+              type="text" 
+              className="modal-search-input"
+              placeholder="Nombre de la liga..."
+              value={newLeagueName}
+              onChange={(e) => setNewLeagueName(e.target.value)}
+              autoFocus
+            />
+            <div className="modal-actions-flex">
+              <button className="btn-secondary" onClick={() => setShowCreateLeagueModal(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={handleCreateLeague}>Crear e Ir a la Liga</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Add Player Modal */}
       {showAddModal && (
         <div className="modal-backdrop" onClick={() => setShowAddModal(null)}>
@@ -335,6 +457,28 @@ function App() {
           <span className="logo-emoji">⚽</span>
           <h1>LALIGA FANTASY <span className="neon-text">EXPERT</span></h1>
         </div>
+
+        {/* Multi-League Selector */}
+        <div className="league-selector-wrapper">
+          <span className="league-icon">🏆</span>
+          <select 
+            className="league-select-dropdown"
+            value={activeLeague}
+            onChange={(e) => {
+              if (e.target.value === '__NEW__') {
+                setShowCreateLeagueModal(true);
+              } else {
+                handleSwitchLeague(e.target.value);
+              }
+            }}
+          >
+            {leaguesList.map(name => (
+              <option key={name} value={name}>Liga: {name}</option>
+            ))}
+            <option value="__NEW__">➕ Crear Nueva Liga...</option>
+          </select>
+        </div>
+
         <div className="header-stats">
           <div className="stat-pill">
             <span className="label">Presupuesto:</span>
@@ -387,7 +531,7 @@ function App() {
               className={`nav-item ${activeTab === 'config' ? 'active' : ''}`}
               onClick={() => setActiveTab('config')}
             >
-              ⚙️ Configurar Listas
+              ⚙️ Gestionar Ligas
             </button>
           </nav>
         </aside>
@@ -397,7 +541,7 @@ function App() {
           {activeTab === 'onces' && (
             <div className="tab-onces">
               <div className="onces-selector-container">
-                <h2>Top 5 Formaciones Ideales (XGBoost)</h2>
+                <h2>Top 5 Formaciones Ideales ({activeLeague})</h2>
                 <div className="onces-selector">
                   {onces_ideales?.map((once, idx) => (
                     <button
@@ -473,7 +617,7 @@ function App() {
                 </div>
               ) : (
                 <div className="empty-state">
-                  <p>❌ No hay suficientes jugadores válidos en la plantilla para formar un Once legal.</p>
+                  <p>❌ No hay suficientes jugadores válidos en tu plantilla para formar un Once legal en la liga <strong>"{activeLeague}"</strong>.</p>
                 </div>
               )}
             </div>
@@ -613,10 +757,13 @@ function App() {
             <div className="tab-plantilla">
               <div className="tab-header-flex">
                 <div>
-                  <h2>Mi Plantilla</h2>
-                  <p className="subtitle">Jugadores en tu equipo actual</p>
+                  <h2>Mi Plantilla <span className="league-title-tag">({activeLeague})</span></h2>
+                  <p className="subtitle">Jugadores en tu equipo actual de esta liga</p>
                 </div>
                 <div className="header-actions">
+                  <button className="btn-clear-danger" onClick={() => handleClearList('plantilla')} title="Vaciar plantilla completa">
+                    🗑️ Vaciar Plantilla
+                  </button>
                   <button className="btn-add-player" onClick={() => setShowAddModal('plantilla')}>
                     ➕ Añadir Jugador
                   </button>
@@ -687,10 +834,13 @@ function App() {
             <div className="tab-mercado">
               <div className="tab-header-flex">
                 <div>
-                  <h2>Fichajes Recomendados</h2>
+                  <h2>Fichajes Recomendados <span className="league-title-tag">({activeLeague})</span></h2>
                   <p className="subtitle">Algoritmo de puntuación sobre 100: Forma (40%) + Tendencia (30%) + Rentabilidad (30%)</p>
                 </div>
                 <div className="header-actions">
+                  <button className="btn-clear-danger" onClick={() => handleClearList('mercado')} title="Vaciar mercado completo">
+                    🗑️ Vaciar Mercado
+                  </button>
                   <button className="btn-add-player" onClick={() => setShowAddModal('mercado')}>
                     ➕ Añadir al Mercado
                   </button>
@@ -754,7 +904,7 @@ function App() {
           {activeTab === 'alertas' && (
             <div className="tab-alertas">
               <div className="tab-header-flex">
-                <h2>Alertas de Venta Sugeridas</h2>
+                <h2>Alertas de Venta Sugeridas <span className="league-title-tag">({activeLeague})</span></h2>
                 <p className="subtitle">Detecta lesionados, sancionados, bajadas drásticas de valor o bajo xP en comparación con su media.</p>
               </div>
 
@@ -797,26 +947,61 @@ function App() {
               ) : (
                 <div className="success-state">
                   <h3>✅ Tu plantilla está en perfecto estado</h3>
-                  <p>No se han detectado lesionados, caídas de valor de mercado drásticas ni desplomes de rendimiento proyectado.</p>
+                  <p>No se han detectado lesionados, caídas de valor de mercado drásticas ni desplomes de rendimiento proyectado en la liga <strong>"{activeLeague}"</strong>.</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB: CONFIGURACIÓN TAGS */}
+          {/* TAB: GESTIÓN DE LIGAS */}
           {activeTab === 'config' && (
             <div className="tab-config">
-              <h2>Configurar Listas de Selección</h2>
-              <p className="subtitle">Administra los jugadores de tu plantilla y mercado mediante etiquetas visuales sencillas.</p>
+              <div className="tab-header-flex">
+                <div>
+                  <h2>⚙️ Gestión de Ligas y Listas</h2>
+                  <p className="subtitle">Administra tus perfiles de ligas paralelas y modifica los jugadores de cada una.</p>
+                </div>
+                <button className="btn-add-player" onClick={() => setShowCreateLeagueModal(true)}>
+                  ➕ Crear Nueva Liga
+                </button>
+              </div>
+
+              {/* Leagues Manager Panel */}
+              <div className="leagues-manager-card">
+                <h3>🏆 Mis Ligas Registradas</h3>
+                <div className="leagues-grid">
+                  {leaguesList.map(name => (
+                    <div key={name} className={`league-card-item ${name === activeLeague ? 'active' : ''}`}>
+                      <div className="league-info">
+                        <strong>{name}</strong>
+                        {name === activeLeague && <span className="active-pill">ACTIVA</span>}
+                      </div>
+                      <div className="league-actions">
+                        {name !== activeLeague && (
+                          <button className="btn-switch-sm" onClick={() => handleSwitchLeague(name)}>
+                            Activar
+                          </button>
+                        )}
+                        {leaguesList.length > 1 && (
+                          <button className="btn-delete-sm" onClick={() => handleDeleteLeague(name)} title="Eliminar liga">
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               
-              <div className="config-flex">
+              <div className="config-flex" style={{ marginTop: '2rem' }}>
                 {/* Plantilla Tags */}
                 <div className="config-editor">
                   <div className="config-box-header">
-                    <h3>👥 Mi Plantilla ({configPlantilla.length})</h3>
-                    <button className="btn-add-player-sm" onClick={() => setShowAddModal('plantilla')}>
-                      + Añadir
-                    </button>
+                    <h3>👥 Plantilla: {activeLeague} ({configPlantilla.length})</h3>
+                    <div className="header-actions">
+                      <button className="btn-clear-danger-sm" onClick={() => handleClearList('plantilla')}>🗑️ Vaciar</button>
+                      <button className="btn-add-player-sm" onClick={() => setShowAddModal('plantilla')}>+ Añadir</button>
+                    </div>
                   </div>
                   <div className="tags-container">
                     {configPlantilla.map(name => (
@@ -831,10 +1016,11 @@ function App() {
                 {/* Mercado Tags */}
                 <div className="config-editor">
                   <div className="config-box-header">
-                    <h3>🛒 Mercado de Hoy ({configMercado.length})</h3>
-                    <button className="btn-add-player-sm" onClick={() => setShowAddModal('mercado')}>
-                      + Añadir
-                    </button>
+                    <h3>🛒 Mercado: {activeLeague} ({configMercado.length})</h3>
+                    <div className="header-actions">
+                      <button className="btn-clear-danger-sm" onClick={() => handleClearList('mercado')}>🗑️ Vaciar</button>
+                      <button className="btn-add-player-sm" onClick={() => setShowAddModal('mercado')}>+ Añadir</button>
+                    </div>
                   </div>
                   <div className="tags-container">
                     {configMercado.map(name => (
