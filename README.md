@@ -5,8 +5,9 @@
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)
 ![React](https://img.shields.io/badge/Frontend-React%20%28Vite%29-61DAFB.svg)
 ![Machine Learning](https://img.shields.io/badge/ML-XGBoost-orange.svg)
+![Local LLM](https://img.shields.io/badge/AI-Ollama%20%28Gemma2%2FLlama3%29-black.svg)
 
-Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Machine Learning (XGBoost) para predecir el rendimiento de los jugadores por posición táctica, optimiza tus alineaciones mediante fuerza bruta combinatoria y te asesora en el mercado con una interfaz interactiva moderna.
+Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Machine Learning (XGBoost) para predecir el rendimiento de los jugadores por posición táctica, optimiza tus alineaciones mediante fuerza bruta combinatoria, incluye un **Chatbot de IA Local con Ollama** y te asesora en el mercado con una interfaz interactiva moderna.
 
 ### Vista Previa de la Interfaz
 ![Vista Previa de la Interfaz Web](dashboard_preview.png)
@@ -18,6 +19,9 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 
 ## Funcionalidades Principales
 
+- **Chatbot Analista de IA Local ("Míster AI"):** asistente conversacional integrado con **Ollama** (`gemma2:2b`, `llama3.2:1b`, `llama3`). Inyecta en tiempo real los datos en vivo de tu liga activa (plantilla, xP XGBoost, mercado diario y presupuesto) para responder a tus dudas tácticas en lenguaje natural con formateo de negritas Markdown y selector de modelos.
+- **Sistema Multiliga Independiente:** administra perfiles para múltiples ligas paralelas (`data/leagues.json`) desde un desplegable en el Header, manteniendo aisladas las plantillas, mercados y predicciones de cada una.
+- **Borrado Masivo en 1 Click:** permite vaciar la plantilla o el mercado de cualquier liga de un solo click con confirmación de seguridad.
 - **Motor Multi-Modelo XGBoost (xP):** entrena **4 modelos de IA independientes** especializados por posición (`PT`, `DF`, `MC`, `DL`). Analiza la racha ponderada (WMA), la tendencia de aceleración, la consistencia, el próximo rival y la localía.
 - **Onces Ideales con Tablero Táctico 2D:** examina miles de combinaciones tácticas cruzando todas las formaciones legales. La interfaz web renderiza un campo de fútbol interactivo en el que se ubican los jugadores según el esquema elegido.
 - **Algoritmo de Fichajes:** puntúa a los jugadores disponibles del mercado de 0 a 100 evaluando la Forma Reciente (WMA 40%), Tendencia de Mercado (30%) y Rentabilidad (30%).
@@ -30,7 +34,7 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 
 ```text
  fantasy/
-├── app.py                # Servidor Backend (FastAPI API REST)
+├── app.py                # Servidor Backend (FastAPI API REST + Endpoint Ollama /api/chat)
 ├── main.py               # Ejecutador CLI tradicional
 ├── run_web.ps1           # Script de arranque rápido (un solo click)
 ├── core/                 # Lógica de negocio (Python)
@@ -40,13 +44,14 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 │   ├── analyzer.py          # Optimizador de alineaciones y recomendador de fichajes
 │   └── utils.py             # Utilidades de lectura y búsqueda difusa (Fuzzy Search)
 ├── data/                 # Directorio de persistencia local (ignorado en Git)
-│   ├── mi_plantilla.txt     # Tu equipo (editable desde la web)
-│   ├── mercado_hoy.txt      # Mercado libre (editable desde la web)
+│   ├── leagues.json         # Perfiles multiliga (plantillas y mercados independientes)
+│   ├── mi_plantilla.txt     # Tu equipo activo (sincronizado)
+│   ├── mercado_hoy.txt      # Mercado activo (sincronizado)
 │   └── historico_aprendizaje.csv # Registros de aprendizaje XGBoost
 └── frontend/             # Aplicación de Interfaz Web (React)
     ├── src/
-    │   ├── App.jsx       # Lógica UI (Tablero 2D, paneles y llamadas API)
-    │   ├── App.css       # Estilo HSL (Modo oscuro y glassmorphism)
+    │   ├── App.jsx       # Lógica UI (Tablero 2D, ChatWidget Míster AI y Paneles)
+    │   ├── App.css       # Estilo HSL (Modo oscuro, chat neón y glassmorphism)
     │   └── main.jsx      # Punto de entrada de React
     └── package.json      # Dependencias del frontend
 ```
@@ -56,12 +61,12 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 ## Instrucciones de Instalación y Uso
 
 ### 1. Instalación de dependencias
-Asegúrate de tener Python 3.11+ y Node.js instalados en tu sistema. Luego, instala los requisitos del backend:
+Asegúrate de tener Python 3.11+, Node.js y [Ollama](https://ollama.com/) instalados en tu sistema. Luego, instala los requisitos del backend:
 ```bash
 pip install -r requirements.txt
 ```
 
-Y las dependencias del frontend (se instalan automáticamente con el script de arranque, o manualmente):
+Y las dependencias del frontend:
 ```bash
 cd frontend
 npm install
@@ -73,8 +78,9 @@ En una terminal de **PowerShell**, ejecuta el script de arranque:
 ```powershell
 .\run_web.ps1
 ```
-* Este script levantará la API de FastAPI en segundo plano (`http://localhost:8000`) abriendo su propia consola para mostrar los logs en directo.
-* Compilará y servirá la interfaz web de React en `http://localhost:5173/`, abriéndose automáticamente en tu navegador predeterminado.
+* Este script levantará la API de FastAPI en segundo plano (`http://localhost:8000`).
+* Servirá la interfaz web de React en `http://localhost:5173/`, abriéndose automáticamente en tu navegador predeterminado.
+* Para usar el **Chatbot Míster AI**, asegúrate de tener el servicio de Ollama activo con tu modelo preferido (ej. `ollama run gemma2:2b`).
 
 ---
 
