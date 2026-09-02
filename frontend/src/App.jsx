@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000/api';
@@ -26,6 +26,19 @@ const getInitials = (name) => {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+// Helper to parse basic Markdown (bold, line breaks) safely into HTML
+const formatMarkdown = (text) => {
+  if (!text) return '';
+  let formatted = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br/>');
+  return formatted;
 };
 
 // Player Avatar component: tries official CDN photo, falls back to initials badge
@@ -70,9 +83,171 @@ const StreakDots = ({ points }) => {
   );
 };
 
+// Chat Widget Component
+const ChatWidget = ({ activeLeague }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: 'assistant',
+      content: `¡Hola! Soy **Míster AI**, tu analista táctico. Estoy analizando tus datos en vivo de la liga **"${activeLeague}"**. ¿En qué puedo ayudarte hoy?`
+    }
+  ]);
+  const [inputMsg, setInputMsg] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemma2:2b');
+  const [isThinking, setIsThinking] = useState(false);
+  const chatEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    if (isOpen) scrollToBottom();
+  }, [messages, isOpen, isThinking]);
+
+  const handleSendMessage = async (textToSend) => {
+    const query = textToSend || inputMsg;
+    if (!query.trim() || isThinking) return;
+
+    const newHistory = [...messages, { role: 'user', content: query }];
+    setMessages(newHistory);
+    if (!textToSend) setInputMsg('');
+    setIsThinking(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          model: selectedModel,
+          history: newHistory.map(m => ({ role: m.role, content: m.content }))
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setMessages(prev => [...prev, { role: 'assistant', content: json.reply }]);
+      } else {
+        const errJson = await res.json();
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `⚠️ Error: ${errJson.detail || 'No se pudo conectar con el modelo local.'}`
+        }]);
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "⚠️ No se pudo conectar con el servidor backend o con Ollama local (http://localhost:11434)."
+      }]);
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
+  return (
+    <div className="chat-widget-container">
+      {!isOpen ? (
+        <button className="chat-floating-btn" onClick={() => setIsOpen(true)}>
+          <span className="chat-btn-icon">🤖</span>
+          <span className="chat-btn-text">Míster AI</span>
+        </button>
+      ) : (
+        <div className="chat-window">
+          {/* Chat Header */}
+          <div className="chat-header">
+            <div className="chat-header-title">
+              <span className="chat-avatar-icon">🤖</span>
+              <div>
+                <h4>Míster AI <span className="online-dot">●</span></h4>
+                <span className="chat-sub">Analista de LaLiga Fantasy</span>
+              </div>
+            </div>
+            
+            <div className="chat-header-actions">
+              <select 
+                className="chat-model-select"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                title="Seleccionar modelo LLM local de Ollama"
+              >
+                <option value="gemma2:2b">Gemma 2 (2B)</option>
+                <option value="llama3.2:1b">Llama 3.2 (1B)</option>
+                <option value="llama3">Llama 3 (8B)</option>
+              </select>
+              <button className="btn-close-chat" onClick={() => setIsOpen(false)}>✖</button>
+            </div>
+          </div>
+
+          {/* Messages Container */}
+          <div className="chat-messages-box">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`chat-message-row ${msg.role}`}>
+                {msg.role === 'assistant' && <span className="msg-avatar">🤖</span>}
+                <div 
+                  className="chat-bubble"
+                  dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                />
+              </div>
+            ))}
+            {isThinking && (
+              <div className="chat-message-row assistant">
+                <span className="msg-avatar">🤖</span>
+                <div className="chat-bubble thinking">
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Quick Prompts */}
+          <div className="chat-quick-prompts">
+            <button onClick={() => handleSendMessage("¿Qué opinas de mi alineación ideal de esta jornada?")}>
+              📋 Alineación Ideal
+            </button>
+            <button onClick={() => handleSendMessage("¿Qué fichaje del mercado me conviene más?")}>
+              🛒 Fichajes Recomendados
+            </button>
+            <button onClick={() => handleSendMessage("¿Tengo alguna alerta de venta urgente en mi plantilla?")}>
+              ⚠️ Alertas de Venta
+            </button>
+          </div>
+
+          {/* Chat Input */}
+          <form 
+            className="chat-input-area"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSendMessage();
+            }}
+          >
+            <input 
+              type="text" 
+              className="chat-input-field"
+              placeholder="Pregunta a Míster AI sobre tu plantilla..."
+              value={inputMsg}
+              onChange={(e) => setInputMsg(e.target.value)}
+              disabled={isThinking}
+            />
+            <button type="submit" className="chat-send-btn" disabled={!inputMsg.trim() || isThinking} title="Enviar mensaje">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
+
 function App() {
   const [data, setData] = useState(null);
-  const [activeTab, setActiveTab] = useState('onces'); // 'onces', 'explorer', 'plantilla', 'mercado', 'alertas', 'config'
+  const [activeTab, setActiveTab] = useState('onces');
   const [selectedOnceIndex, setSelectedOnceIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,14 +266,14 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [posFilter, setPosFilter] = useState('TODOS');
   const [teamFilter, setTeamFilter] = useState('TODOS');
-  const [sortBy, setSortBy] = useState('xP'); // 'xP', 'Media', 'Valor', 'WMA'
+  const [sortBy, setSortBy] = useState('xP');
 
   // Config raw lists
   const [configPlantilla, setConfigPlantilla] = useState([]);
   const [configMercado, setConfigMercado] = useState([]);
 
   // Modal selector for adding players
-  const [showAddModal, setShowAddModal] = useState(null); // 'plantilla' | 'mercado' | null
+  const [showAddModal, setShowAddModal] = useState(null);
   const [modalSearch, setModalSearch] = useState('');
 
   const fetchData = async () => {
@@ -109,7 +284,6 @@ function App() {
       setData(json);
       if (json.active_league) setActiveLeague(json.active_league);
       
-      // Load config & leagues list
       const configRes = await fetch(`${API_BASE}/config`);
       const configJson = await configRes.json();
       setConfigPlantilla(configJson.plantilla || []);
@@ -293,7 +467,6 @@ function App() {
     }
   };
 
-  // Filtered & Sorted All Players for Explorer
   const filteredPlayers = useMemo(() => {
     let list = [...allPlayersData.players];
 
@@ -334,7 +507,6 @@ function App() {
   const { plantilla, mercado, alertas, onces_ideales, presupuesto } = data || {};
   const currentOnceObj = onces_ideales && onces_ideales[selectedOnceIndex];
 
-  // Helper for 2D Pitch Layout
   const getCoordinates = (pos, index, totalOfPosition, formationStr) => {
     const [df, mc, dl] = formationStr.split('-').map(Number);
     if (pos === 'PT') return { left: '50%', top: '88%' };
@@ -1036,6 +1208,9 @@ function App() {
           )}
         </main>
       </div>
+
+      {/* Floating AI Chatbot Widget */}
+      <ChatWidget activeLeague={activeLeague} />
     </div>
   );
 }

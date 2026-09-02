@@ -12,6 +12,7 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 ![Vista Previa de la Interfaz Web](dashboard_preview.png)
 ![Vista Previa de la Interfaz Web](dashboard_preview2.png)
 ![Vista Previa de la Interfaz Web](dashboard_preview3.png)
+![Vista Previa del chatbot](dashboard_preview4.png)
 
 ---
 

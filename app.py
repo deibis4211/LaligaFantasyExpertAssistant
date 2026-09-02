@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,11 +32,11 @@ PLANTILLA_FILE = 'data/mi_plantilla.txt'
 MERCADO_FILE = 'data/mercado_hoy.txt'
 LEAGUES_FILE = 'data/leagues.json'
 PRESUPUESTO = 18000000
+OLLAMA_URL = "http://localhost:11434/api/chat"
 
 # Helper to manage leagues.json
 def load_leagues_data():
     if not os.path.exists(LEAGUES_FILE):
-        # Initial migration from txt files
         p_list = load_user_list(PLANTILLA_FILE)
         m_list = load_user_list(MERCADO_FILE)
         initial_data = {
@@ -70,7 +71,6 @@ def save_leagues_data(leagues_data):
     with open(LEAGUES_FILE, 'w', encoding='utf-8') as f:
         json.dump(leagues_data, f, ensure_ascii=False, indent=2)
         
-    # Sync current active league to txt files for backwards compatibility
     active_name = leagues_data.get("active", "Liga Principal")
     active_league = leagues_data.get("leagues", {}).get(active_name, {"plantilla": [], "mercado": []})
     
@@ -89,7 +89,6 @@ def initialize_data(force_refresh=False):
         DATA_CACHE["teams_map"] = teams_map
         DATA_CACHE["teams_raw"] = teams_raw
         
-        # ML: Guardar e inicializar modelos
         hist_df = save_snapshot(df, teams_raw)
         predictor = FantasyPredictor()
         predictor.train(hist_df)
@@ -114,11 +113,9 @@ def get_dashboard_data():
     plantilla_names = active_league.get("plantilla", [])
     mercado_names = active_league.get("mercado", [])
     
-    # Análisis de plantilla y mercado
     top_5_onces, alertas = analyze_plantilla(df, plantilla_names)
     recomendaciones = analyze_market(df, mercado_names, PRESUPUESTO)
     
-    # Resolver nombres con Fuzzy Match para garantizar coincidencia con la DB
     lista_db = df['Nombre'].tolist()
     plantilla_names_matched = []
     from core.utils import get_fuzzy_match
@@ -129,7 +126,6 @@ def get_dashboard_data():
             
     df_plantilla = df[df['Nombre'].isin(plantilla_names_matched)].copy()
     
-    # Resolver xP para plantilla completa
     predictor = FantasyPredictor()
     if predictor.load():
         if not df_plantilla.empty:
@@ -138,14 +134,12 @@ def get_dashboard_data():
         else:
             plantilla_list = []
     else:
-        # Fallback a WMA
         if not df_plantilla.empty:
             df_plantilla['xP'] = df_plantilla['Puntos_Recientes'].apply(lambda x: sum(x)/len(x) if x else 0)
             plantilla_list = df_plantilla.to_dict('records')
         else:
             plantilla_list = []
 
-    # Formatear Top 5 Onces
     onces_response = []
     for form_name, xp_tot, once_df in top_5_onces:
         onces_response.append({
@@ -240,7 +234,7 @@ def delete_league(payload: dict):
 
 @app.post("/api/clear")
 def clear_list(payload: dict):
-    target = payload.get("target") # 'plantilla' or 'mercado'
+    target = payload.get("target")
     data = load_leagues_data()
     active_name = data.get("active", "Liga Principal")
     
@@ -253,6 +247,92 @@ def clear_list(payload: dict):
         
     save_leagues_data(data)
     return {"status": "success"}
+
+@app.post("/api/chat")
+def chat_with_assistant(payload: dict):
+    user_message = payload.get("message", "").strip()
+    model_name = payload.get("model", "gemma2:2b")
+    history = payload.get("history", [])
+
+    if not user_message:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío.")
+
+    # 1. Obtener contexto en vivo de la liga activa
+    dash_data = get_dashboard_data()
+    active_league = dash_data.get("active_league", "Liga Principal")
+    presupuesto = dash_data.get("presupuesto", 18000000)
+    plantilla = dash_data.get("plantilla", [])
+    mercado = dash_data.get("mercado", [])
+    onces = dash_data.get("onces_ideales", [])
+    alertas = dash_data.get("alertas", [])
+
+    # Formatear contexto en texto estructurado
+    plantilla_summary = ", ".join([f"{p['Nombre']} ({p['Posicion']}, {p['Equipo']}, Media: {p['Media']}, xP: {p.get('xP', 0):.1f}, Estado: {p['Estado']})" for p in plantilla]) if plantilla else "Sin jugadores en plantilla."
+    mercado_summary = ", ".join([f"{p['Nombre']} ({p['Posicion']}, {p['Equipo']}, Valor: {p['Valor']:,}€, Score: {p.get('Nota_Fichaje_100', 0):.1f}/100)" for p in mercado]) if mercado else "Sin jugadores en el mercado."
+    top_once_summary = f"Formación {onces[0]['formacion']} con {onces[0]['xp_total']:.1f} xP total" if onces else "No hay alineación legal suficiente."
+    alertas_summary = ", ".join([f"{p['Nombre']} ({p.get('Motivo_Venta', 'Revisar')})" for p in alertas]) if alertas else "Sin alertas activas."
+
+    context_str = f"""
+DATOS DE LA LIGA ACTIVA ("{active_league}"):
+- Presupuesto Disponible: {presupuesto:,} €
+- Mi Plantilla Actual ({len(plantilla)} jugadores): {plantilla_summary}
+- Mercado Recomendado Hoy ({len(mercado)} jugadores): {mercado_summary}
+- Mejor Once Proyectado: {top_once_summary}
+- Alertas de Venta Sugeridas: {alertas_summary}
+"""
+
+    system_prompt = """Eres 'Míster AI', un analista táctico experto en LaLiga Fantasy y Biwenger.
+Tu objetivo es aconsejar al usuario sobre sus alineaciones, pujas de mercado, ventas y estrategia fantasy.
+
+REGLAS DE RESPUESTA:
+1. Responde siempre en español con un tono cercano, deportivo, profesional y experto.
+2. Basate estrictamente en los DATOS DE LA LIGA ACTIVA proporcionados arriba para dar respuestas precisas.
+3. Si el usuario te hace una pregunta totalmente ajena al fútbol o LaLiga Fantasy (ej. recetas de cocina, historia general, código informático), rehúsala amablemente en una sola frase indicando que solo estás entrenado para estrategia táctica Fantasy.
+4. Sé conciso y directo (máximo 2 a 3 párrafos o puntos clave) para que sea ágil de leer.
+"""
+
+    # Construir historial para Ollama
+    messages = [{"role": "system", "content": system_prompt + "\n\n" + context_str}]
+    for msg in history[-6:]: # Mantener últimos 6 mensajes de conversación
+        messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+    messages.append({"role": "user", "content": user_message})
+
+    try:
+        ollama_res = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": model_name,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": 0.6
+                }
+            },
+            timeout=45
+        )
+
+        if ollama_res.status_code == 200:
+            res_json = ollama_res.json()
+            reply = res_json.get("message", {}).get("content", "No pude generar una respuesta.")
+            return {
+                "status": "success",
+                "reply": reply,
+                "model": model_name
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Ollama devolvió un código de error: {ollama_res.status_code}")
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con Ollama. Asegúrate de que Ollama está ejecutándose en tu PC en http://localhost:11434."
+        )
+    except requests.exceptions.Timeout:
+        raise HTTPException(
+            status_code=504,
+            detail=f"El modelo '{model_name}' tardó demasiado en responder. Si es la primera vez que lo usas, dale unos segundos para cargar en memoria e inténtalo de nuevo."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/refresh")
 def refresh_data():
