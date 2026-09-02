@@ -21,7 +21,6 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 
 - **Chatbot Analista de IA Local ("Míster AI"):** asistente conversacional integrado con **Ollama** (`gemma2:2b`, `llama3.2:1b`, `llama3`). Inyecta en tiempo real los datos en vivo de tu liga activa (plantilla, xP XGBoost, mercado diario y presupuesto) para responder a tus dudas tácticas en lenguaje natural con formateo de negritas Markdown y selector de modelos.
 - **Sistema Multiliga Independiente:** administra perfiles para múltiples ligas paralelas (`data/leagues.json`) desde un desplegable en el Header, manteniendo aisladas las plantillas, mercados y predicciones de cada una.
-- **Borrado Masivo en 1 Click:** permite vaciar la plantilla o el mercado de cualquier liga de un solo click con confirmación de seguridad.
 - **Motor Multi-Modelo XGBoost (xP):** entrena **4 modelos de IA independientes** especializados por posición (`PT`, `DF`, `MC`, `DL`). Analiza la racha ponderada (WMA), la tendencia de aceleración, la consistencia, el próximo rival y la localía.
 - **Onces Ideales con Tablero Táctico 2D:** examina miles de combinaciones tácticas cruzando todas las formaciones legales. La interfaz web renderiza un campo de fútbol interactivo en el que se ubican los jugadores según el esquema elegido.
 - **Algoritmo de Fichajes:** puntúa a los jugadores disponibles del mercado de 0 a 100 evaluando la Forma Reciente (WMA 40%), Tendencia de Mercado (30%) y Rentabilidad (30%).
