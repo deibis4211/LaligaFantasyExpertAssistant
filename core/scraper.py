@@ -72,6 +72,17 @@ def scrape_players():
                 pos_map = {1: 'PT', 2: 'DF', 3: 'MC', 4: 'DL'}
                 pos = pos_map.get(pos_id, 'UNK')
 
+                # --- FILTROS DE CALIDAD ---
+                # Descartar jugadores sin equipo real en LaLiga
+                if team == 'Desconocido':
+                    continue
+                # Descartar entrenadores y registros con posición inválida
+                if pos == 'UNK':
+                    continue
+                # Descartar jugadores sin valor de mercado (inactivos/retirados)
+                if valor == 0:
+                    continue
+
                 # Obtener rival y localia
                 rival_info = fixtures.get(team, ("Desconocido", True))
                 rival = rival_info[0]
@@ -91,7 +102,7 @@ def scrape_players():
                     'Rival': rival,
                     'Localia': localia
                 })
-            print(f"[*] Base de datos descargada con exito: {len(players_data)} jugadores oficiales.")
+            print(f"[*] Base de datos descargada con exito: {len(players_data)} jugadores validos (sin entrenadores ni jugadores sin equipo).")
             return pd.DataFrame(players_data), teams_map, data.get('teams', {})
     except Exception as e:
         print(f"[!] Error conectando a la API: {e}")
