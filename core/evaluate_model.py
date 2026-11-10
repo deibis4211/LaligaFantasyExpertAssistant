@@ -16,7 +16,7 @@ def evaluate_models():
         return
 
     df = pd.read_csv(historical_file)
-    df_eval = df[df['Target'].notna()].copy()
+    df_eval = df[df['Target'].notna() & df['Media'].notna()].copy()
     
     if df_eval.empty:
         print("[!] El dataset no contiene suficientes registros con Target válido.")
@@ -40,9 +40,9 @@ def evaluate_models():
         train_data = df_eval.iloc[train_idx].copy()
         val_data = df_eval.iloc[val_idx].copy()
         
-        # Instanciar y entrenar
+        # Instanciar y entrenar sin sobrescribir los modelos de producción en data/
         predictor = FantasyPredictor()
-        predictor.train(train_data)
+        predictor.train(train_data, save=False, verbose=(fold == 1))
         
         # Predecir sobre validación
         val_preds = predictor.predict(val_data)

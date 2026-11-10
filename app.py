@@ -168,9 +168,9 @@ def get_all_players():
             df_all['xP'] = predictor.predict(df_all)
         except Exception as e:
             print(f"[!] Error prediciendo xP para todos los jugadores: {e}")
-            df_all['xP'] = df_all['WMA']
+            df_all['xP'] = df_all['WMA'] if 'WMA' in df_all.columns else df_all['Media']
     else:
-        df_all['xP'] = df_all['WMA']
+        df_all['xP'] = df_all['WMA'] if 'WMA' in df_all.columns else df_all['Media']
         
     teams_list = sorted(list(df_all['Equipo'].unique()))
     players_list = df_all.to_dict('records')

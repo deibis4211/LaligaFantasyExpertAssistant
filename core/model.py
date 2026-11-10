@@ -46,22 +46,21 @@ class FantasyPredictor:
         df_ml = df.copy()
         df_ml['Posicion_raw'] = df_ml['Posicion'].astype(str)
         
-        # Calcular variables avanzadas de forma a partir de Puntos_Recientes si es necesario
-        if 'WMA' not in df_ml.columns and 'Puntos_Recientes' in df_ml.columns:
-            from core.data_manager import calculate_wma, calculate_trend, calculate_volatility
+        # Calcular variables avanzadas de forma a partir de Puntos_Recientes si falta alguna
+        if not {'WMA', 'Tendencia', 'Volatilidad'}.issubset(df_ml.columns) and 'Puntos_Recientes' in df_ml.columns:
+            from core.data_manager import calculate_wma, calculate_trend, calculate_volatility, _normalize_fitness
             wma_list, trend_list, vol_list = [], [], []
             for _, r in df_ml.iterrows():
-                fitness = r['Puntos_Recientes']
-                if not isinstance(fitness, list): fitness = [0,0,0,0,0]
-                while len(fitness) < 5: fitness.insert(0, 0)
-                fitness = fitness[-5:]
-                
+                fitness = _normalize_fitness(r['Puntos_Recientes'])
                 wma_list.append(calculate_wma(fitness))
                 trend_list.append(calculate_trend(fitness))
                 vol_list.append(calculate_volatility(fitness))
-            df_ml['WMA'] = wma_list
-            df_ml['Tendencia'] = trend_list
-            df_ml['Volatilidad'] = vol_list
+            if 'WMA' not in df_ml.columns:
+                df_ml['WMA'] = wma_list
+            if 'Tendencia' not in df_ml.columns:
+                df_ml['Tendencia'] = trend_list
+            if 'Volatilidad' not in df_ml.columns:
+                df_ml['Volatilidad'] = vol_list
             
         if 'Rival' not in df_ml.columns:
             df_ml['Rival'] = 'Desconocido'
@@ -79,37 +78,54 @@ class FantasyPredictor:
         )
         return df_ml
 
-    def train(self, historical_df):
-        print("[*] Entrenando modelos XGBoost especializados por posición (4 en total)...")
-        
-        # Preparar encoders
-        df_base = self._prepare_encoders(historical_df)
+    def train(self, historical_df, save=True, verbose=True):
+        if verbose:
+            print("[*] Entrenando modelos XGBoost especializados por posición (4 en total)...")
+
+        df_train = historical_df[historical_df['Target'].notna()].copy()
+        if df_train.empty:
+            if verbose:
+                print("[!] Sin datos con Target válido para entrenar.")
+            return
+
+        # Reajustar encoders en cada entrenamiento completo
+        self.encoders = {}
+        df_base = self._prepare_encoders(df_train)
         self.feature_cols = ['Equipo', 'Posicion', 'Valor', 'Media', 'WMA', 'Tendencia', 'Volatilidad', 'Rival', 'Localia']
-        
+
+        pos_params = {
+            'PT': dict(n_estimators=80, learning_rate=0.04, max_depth=2, min_child_weight=8, subsample=0.8, colsample_bytree=0.8, reg_lambda=5.0),
+            'DF': dict(n_estimators=150, learning_rate=0.04, max_depth=3, min_child_weight=5, subsample=0.85, colsample_bytree=0.85, reg_lambda=3.0),
+            'MC': dict(n_estimators=150, learning_rate=0.04, max_depth=3, min_child_weight=5, subsample=0.85, colsample_bytree=0.85, reg_lambda=3.0),
+            'DL': dict(n_estimators=150, learning_rate=0.04, max_depth=3, min_child_weight=5, subsample=0.85, colsample_bytree=0.85, reg_lambda=3.0),
+        }
+
         positions = ['PT', 'DF', 'MC', 'DL']
         for pos in positions:
             df_pos = df_base[df_base['Posicion_raw'] == pos].copy()
-            
+
             if not df_pos.empty:
                 X = df_pos[self.feature_cols]
                 y = df_pos['Target']
                 model = xgb.XGBRegressor(
-                    n_estimators=200,
-                    learning_rate=0.05,
-                    max_depth=4,
                     objective='reg:squarederror',
-                    random_state=42
+                    random_state=42,
+                    **pos_params[pos]
                 )
                 model.fit(X, y)
-                file_path = f'data/model_{pos.lower()}.pkl'
-                joblib.dump(model, file_path)
                 self.models[pos] = model
-                print(f"[*] Modelo para {pos} entrenado correctamente.")
+                if save:
+                    file_path = f'data/model_{pos.lower()}.pkl'
+                    joblib.dump(model, file_path)
+                if verbose:
+                    print(f"[*] Modelo para {pos} entrenado correctamente.")
             else:
-                print(f"[!] Sin datos suficientes para entrenar el modelo de {pos}.")
-            
-        # Guardar codificadores
-        joblib.dump(self.encoders, ENCODERS_FILE)
+                if verbose:
+                    print(f"[!] Sin datos suficientes para entrenar el modelo de {pos}.")
+
+        # Guardar codificadores solo si se solicita persistir
+        if save:
+            joblib.dump(self.encoders, ENCODERS_FILE)
 
     def load(self):
         positions = ['PT', 'DF', 'MC', 'DL']
