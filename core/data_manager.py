@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 HISTORICAL_LEARN_FILE = 'data/historico_aprendizaje.csv'
-TRACKING_COLS = ['Partidos_Jugados', 'Game_ID', 'Round_ID']
+TRACKING_COLS = ['Partidos_Jugados', 'Game_ID', 'Round_ID', 'Round_Label', 'Match_Date']
 
 
 def _norm_id(val):
@@ -59,8 +59,9 @@ def extract_fixtures(teams_raw):
             rival_name = id_to_name.get(rival_id, "Desconocido")
             game_id = _norm_id(game.get('id'))
             round_id = _norm_id((game.get('round') or {}).get('id'))
+            match_date = game.get('date')
 
-            fixtures[team_name] = (rival_name, is_home, game_id, round_id)
+            fixtures[team_name] = (rival_name, is_home, game_id, round_id, match_date)
 
     return fixtures
 
@@ -135,11 +136,13 @@ def save_snapshot(df, teams_raw):
         pid = int(row['ID'])
         fitness = _normalize_fitness(row.get('Puntos_Recientes'))
         eq = row['Equipo']
-        rival_info = fixtures.get(eq, ("Desconocido", True, None, None))
+        rival_info = fixtures.get(eq, ("Desconocido", True, None, None, None))
         rival = rival_info[0]
         localia = 1.0 if rival_info[1] else 0.0
         game_id = _norm_id(row.get('Game_ID')) or rival_info[2]
         round_id = _norm_id(row.get('Round_ID')) or rival_info[3]
+        round_label = row.get('Round_Label') if pd.notna(row.get('Round_Label')) else round_id
+        match_date = row.get('Match_Date') if pd.notna(row.get('Match_Date')) else rival_info[4]
         pj = _norm_int(row.get('Partidos_Jugados'))
 
         current_by_id[pid] = {
@@ -157,6 +160,8 @@ def save_snapshot(df, teams_raw):
             'Partidos_Jugados': pj,
             'Game_ID': game_id,
             'Round_ID': round_id,
+            'Round_Label': round_label,
+            'Match_Date': match_date,
             'fitness': fitness,
         }
 
@@ -239,7 +244,7 @@ def save_snapshot(df, teams_raw):
 
             if not round_finished and (same_upcoming_game or cur['Game_ID'] is None):
                 # Misma jornada aún sin disputar/cerrar: actualizar snapshot previo sin rellenar Target
-                for field in ('Nombre', 'Equipo', 'Posicion', 'Valor', 'Media', 'WMA', 'Tendencia', 'Volatilidad', 'Rival', 'Localia', 'Partidos_Jugados', 'Round_ID'):
+                for field in ('Nombre', 'Equipo', 'Posicion', 'Valor', 'Media', 'WMA', 'Tendencia', 'Volatilidad', 'Rival', 'Localia', 'Partidos_Jugados', 'Round_ID', 'Round_Label', 'Match_Date'):
                     r[field] = cur[field]
                 r['Game_ID'] = prev_gid
                 r['Target'] = np.nan
@@ -280,6 +285,8 @@ def save_snapshot(df, teams_raw):
             'Partidos_Jugados': cur['Partidos_Jugados'],
             'Game_ID': cur['Game_ID'],
             'Round_ID': cur['Round_ID'],
+            'Round_Label': cur['Round_Label'],
+            'Match_Date': cur['Match_Date'],
             'Target': np.nan,
         })
 

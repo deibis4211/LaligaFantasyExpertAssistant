@@ -14,6 +14,11 @@ def parse_biwenger_data(data):
         for r in seasons_rounds
         if r.get('id') is not None
     }
+    rounds_labels = {
+        int(r['id']): r.get('short') or r.get('name') or str(r['id'])
+        for r in seasons_rounds
+        if r.get('id') is not None
+    }
 
     fixtures = {}
     for t_id, t_data in teams_raw.items():
@@ -28,7 +33,9 @@ def parse_biwenger_data(data):
             rival_n = teams_map.get(rival_id, "Desconocido")
             game_id = game.get('id')
             round_id = (game.get('round') or {}).get('id')
-            fixtures[t_name] = (rival_n, is_h, game_id, round_id)
+            round_label = rounds_labels.get(int(round_id)) if round_id is not None else None
+            match_date = game.get('date')
+            fixtures[t_name] = (rival_n, is_h, game_id, round_id, round_label, match_date)
 
     players_data = []
     for pid, pdata in players.items():
@@ -80,8 +87,8 @@ def parse_biwenger_data(data):
         if team == 'Desconocido' or pos == 'UNK' or valor == 0:
             continue
 
-        rival_info = fixtures.get(team, ("Desconocido", True, None, None))
-        rival, is_h, game_id, round_id = rival_info
+        rival_info = fixtures.get(team, ("Desconocido", True, None, None, None, None))
+        rival, is_h, game_id, round_id, round_label, match_date = rival_info
         localia = 1.0 if is_h else 0.0
         wma_val = round(
             sum(p * w for p, w in zip(p_recientes, range(1, len(p_recientes) + 1)))
@@ -106,6 +113,8 @@ def parse_biwenger_data(data):
             'Partidos_Jugados': partidos_jugados,
             'Game_ID': game_id,
             'Round_ID': round_id,
+            'Round_Label': round_label,
+            'Match_Date': match_date,
         })
 
     df_out = pd.DataFrame(players_data)

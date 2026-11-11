@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 import json
 import os
 import sys
@@ -27,19 +28,39 @@ MATCH_URL_FMT = 'https://biwenger.as.com/api/v2/matches/la-liga/{game_id}?lang=e
 DEFAULT_CACHE_DIR = 'data/matches_cache'
 
 
-def _fetch_json(session, url, timeout=15):
-    """Realiza un GET devolviendo (status_code, json_data)."""
-    resp = session.get(url, timeout=timeout)
+def _format_reset_time(reset_ts):
+    if not reset_ts:
+        return "desconocida"
+    try:
+        dt = datetime.fromtimestamp(int(reset_ts))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        return str(reset_ts)
+
+
+def _fetch_json(session, url, timeout=20):
+    """Realiza un GET devolviendo (status_code, json_data, rate_info) sin lanzar excepción de red."""
+    try:
+        resp = session.get(url, timeout=timeout)
+    except requests.RequestException as exc:
+        print(f"[!] Error de red/timeout al consultar {url}: {exc}")
+        return 0, None, {}
+    rate_info = {
+        'limit': resp.headers.get('X-Rate-Limit-Limit'),
+        'remaining': resp.headers.get('X-Rate-Limit-Remaining'),
+        'reset': resp.headers.get('X-Rate-Limit-Reset'),
+    }
     if resp.status_code == 200:
-        return 200, resp.json().get('data', {})
-    return resp.status_code, None
+        return 200, resp.json().get('data', {}), rate_info
+    return resp.status_code, None, rate_info
 
 
-def _load_or_fetch_matches(session, finished_games, cache_dir, delay=0.9):
+def _load_or_fetch_matches(session, finished_games, cache_dir, delay=0.9, reserve_quota=5):
     """Descarga partidos finalizados secuencialmente usando caché en disco para poder reanudar."""
     os.makedirs(cache_dir, exist_ok=True)
     matches = []
     downloaded = 0
+    last_rate = {}
 
     for idx, (dt, rid, gid) in enumerate(finished_games, 1):
         cache_path = os.path.join(cache_dir, f'{gid}.json')
@@ -48,21 +69,28 @@ def _load_or_fetch_matches(session, finished_games, cache_dir, delay=0.9):
                 matches.append((dt, rid, gid, json.load(f)))
             continue
 
+        # Detener antes de agotar la cuota para no disparar 429 ni bloquear main.py/app.py
+        rem = last_rate.get('remaining')
+        if rem is not None and str(rem).isdigit() and int(rem) <= reserve_quota:
+            return matches, 'quota_low', idx - 1, last_rate
+
         if downloaded > 0 and delay > 0:
             time.sleep(delay)
 
-        status, m_data = _fetch_json(session, MATCH_URL_FMT.format(game_id=gid))
-        if status == 429:
-            return matches, True, idx - 1
-        if status != 200 or not m_data:
-            # Reintento único ante fallo puntual de red/5xx
-            time.sleep(max(1.5, delay))
-            status, m_data = _fetch_json(session, MATCH_URL_FMT.format(game_id=gid))
+        status, m_data, rate_info = 0, None, {}
+        for attempt in range(3):
+            if attempt > 0:
+                time.sleep(2.0 * attempt)
+            status, m_data, rate_info = _fetch_json(session, MATCH_URL_FMT.format(game_id=gid))
+            last_rate = rate_info or last_rate
             if status == 429:
-                return matches, True, idx - 1
-            if status != 200 or not m_data:
-                print(f"[!] Aviso: partido {gid} omitido (HTTP {status}).")
-                continue
+                return matches, '429', idx - 1, rate_info
+            if status == 200 and m_data:
+                break
+
+        if status != 200 or not m_data:
+            print(f"[!] Error descargando partido {gid} tras reintentos (HTTP {status}).")
+            return matches, 'network_error', idx - 1, last_rate
 
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(m_data, f, ensure_ascii=False)
@@ -70,14 +98,16 @@ def _load_or_fetch_matches(session, finished_games, cache_dir, delay=0.9):
         matches.append((dt, rid, gid, m_data))
 
         if downloaded % 15 == 0:
-            print(f"[*] Descargados {idx}/{len(finished_games)} partidos...")
+            rem_str = f" | cuota restante: {rate_info.get('remaining')}" if rate_info.get('remaining') else ""
+            print(f"[*] Descargados {idx}/{len(finished_games)} partidos{rem_str}...")
 
-    return matches, False, len(finished_games)
+    return matches, None, len(finished_games), last_rate
 
 
-def reconstruct_season_history(players_df, matches, min_team_games=3):
+def reconstruct_season_history(players_df, matches, min_team_games=3, round_labels=None):
     """Reconstruye fila a fila el histórico cronológico libre de fuga de datos y orden inverso."""
     active_players = {int(r['ID']): r for _, r in players_df.iterrows()}
+    labels_map = {_norm_id(k): v for k, v in (round_labels or {}).items()}
 
     # Detectar el primer equipo real de cada jugador y su equipo real por jornada
     initial_team = {}
@@ -105,7 +135,7 @@ def reconstruct_season_history(players_df, matches, min_team_games=3):
     team_games_played = {}
 
     reconstructed = []
-    for _, rid, gid, m in matches:
+    for dt, rid, gid, m in matches:
         home_obj = m.get('home') or {}
         away_obj = m.get('away') or {}
         home_name = home_obj.get('name', 'Desconocido')
@@ -124,8 +154,10 @@ def reconstruct_season_history(players_df, matches, min_team_games=3):
                     continue
                 pid = int(pid)
                 if pid in active_players:
-                    match_reports[pid] = (team_n, rival_n, loc, float(rep.get('points', 0)))
                     player_state[pid]['team'] = team_n
+                    raw_pts = rep.get('points')
+                    if raw_pts is not None:
+                        match_reports[pid] = (team_n, rival_n, loc, float(raw_pts))
 
         # Evaluar jugadores pertenecientes a alguno de los dos equipos en este momento
         for side_team, opp_team, loc in (
@@ -168,6 +200,8 @@ def reconstruct_season_history(players_df, matches, min_team_games=3):
                         'Partidos_Jugados': st['played'],
                         'Game_ID': _norm_id(gid),
                         'Round_ID': _norm_id(rid),
+                        'Round_Label': labels_map.get(_norm_id(rid), _norm_id(rid)),
+                        'Match_Date': dt,
                         'Target': pts,
                     })
 
@@ -187,36 +221,44 @@ def rebuild_historico(delay=0.9, cache_dir=DEFAULT_CACHE_DIR, min_team_games=3, 
     session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
 
     print("[*] Descargando jugadores y calendario de la temporada desde Biwenger...")
-    s_data, data_payload = _fetch_json(session, DATA_URL)
+    s_data, data_payload, rate_data = _fetch_json(session, DATA_URL)
     if s_data != 200 or not data_payload:
-        print(f"[!] No se pudo descargar /data de Biwenger (HTTP {s_data}). Inténtalo más tarde.")
+        reset_at = _format_reset_time(rate_data.get('reset'))
+        print(f"[!] No se pudo descargar /data de Biwenger (HTTP {s_data}).")
+        if s_data == 429:
+            print(f"[!] Cuota agotada. Reinicio reportado por Biwenger: {reset_at} (evita reintentar antes para no reiniciar la ventana).")
         return False
 
-    s_season, season_payload = _fetch_json(session, SEASON_URL)
+    s_season, season_payload, rate_season = _fetch_json(session, SEASON_URL)
     if s_season != 200 or not season_payload:
-        print(f"[!] No se pudo descargar /season de Biwenger (HTTP {s_season}). Inténtalo más tarde.")
+        reset_at = _format_reset_time(rate_season.get('reset'))
+        print(f"[!] No se pudo descargar /season de Biwenger (HTTP {s_season}). Reinicio: {reset_at}")
         return False
 
     players_df, _, teams_raw = parse_biwenger_data(data_payload)
     finished_games = []
+    round_labels = {}
     for rnd in season_payload.get('rounds', []):
         rid = rnd.get('id')
+        if rid is not None:
+            round_labels[_norm_id(rid)] = rnd.get('short') or rnd.get('name') or _norm_id(rid)
         for g in rnd.get('games', []):
             if g.get('status') == 'finished' and g.get('id') is not None:
                 finished_games.append((g.get('date', 0), rid, g['id']))
     finished_games.sort(key=lambda x: (x[0], x[2]))
 
-    print(f"[*] Partidos finalizados encontrados: {len(finished_games)} (caché en '{cache_dir}').")
-    matches, hit_429, done_count = _load_or_fetch_matches(session, finished_games, cache_dir, delay=delay)
+    print(f"[*] Partidos finalizados encontrados: {len(finished_games)} (caché en '{cache_dir}', cuota restante: {rate_season.get('remaining', '?')}).")
+    matches, stop_reason, done_count, last_rate = _load_or_fetch_matches(session, finished_games, cache_dir, delay=delay)
 
-    if hit_429:
+    if stop_reason:
+        reset_at = _format_reset_time(last_rate.get('reset'))
         print(
-            f"[!] Biwenger devolvió HTTP 429 tras procesar {done_count}/{len(finished_games)} partidos. "
-            "Los partidos ya descargados quedan guardados en caché; vuelve a ejecutar el script más tarde para reanudar."
+            f"[!] Detenido ({stop_reason}) tras procesar {done_count}/{len(finished_games)} partidos. "
+            f"Los partidos ya descargados quedan en caché; vuelve a ejecutar tras {reset_at}."
         )
         return False
 
-    hist_df = reconstruct_season_history(players_df, matches, min_team_games=min_team_games)
+    hist_df = reconstruct_season_history(players_df, matches, min_team_games=min_team_games, round_labels=round_labels)
     if hist_df.empty:
         print("[!] No se generaron muestras reconstruidas.")
         return False

@@ -25,7 +25,7 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 - **Onces Ideales con Tablero Táctico 2D:** examina miles de combinaciones tácticas cruzando todas las formaciones legales. La interfaz web renderiza un campo de fútbol interactivo en el que se ubican los jugadores según el esquema elegido.
 - **Algoritmo de Fichajes:** puntúa a los jugadores disponibles del mercado de 0 a 100 evaluando la Forma Reciente (WMA 40%), Tendencia de Mercado (30%) y Rentabilidad (30%).
 - **Alertas de Fuga de Valor:** detecta automáticamente caídas de valor (>2%) o lesionados para recomendarte ventas inmediatas en un panel de alertas visual.
-- **Base de Datos Acumulativa de Aprendizaje:** guarda el histórico en `data/historico_aprendizaje.csv` asociando predicciones previas con los resultados exactos por partido y jornada (`Game_ID` y `Round_ID`) en orden cronológico, evitando duplicados al refrescar y recuperando resultados recientes de forma segura.
+- **Base de Datos Acumulativa de Aprendizaje:** guarda el histórico en `data/historico_aprendizaje.csv` asociando predicciones pasadas con los resultados reales por partido y jornada conforme avanza la temporada para reentrenar y evaluar el modelo.
 
 ---
 
@@ -41,8 +41,8 @@ Herramienta analítica avanzada para dominar en **LaLiga Fantasy**. Utiliza Mach
 │   ├── data_manager.py      # Gestión de persistencia, snapshots y WMA/volatilidad
 │   ├── scraper.py           # Descarga de datos oficiales de Biwenger + fixtures
 │   ├── analyzer.py          # Optimizador de alineaciones y recomendador de fichajes
-│   ├── evaluate_model.py    # Evaluación K-Fold de precisión frente a la media
-│   ├── rebuild_historico.py # Reconstrucción cronológica completa desde la API
+│   ├── evaluate_model.py    # Evaluación Walk-Forward y K-Fold de precisión
+│   ├── rebuild_historico.py # Reconstrucción del histórico de temporada desde la API
 │   └── utils.py             # Utilidades de lectura y búsqueda difusa (Fuzzy Search)
 ├── data/                 # Directorio de persistencia local (ignorado en Git)
 │   ├── leagues.json         # Perfiles multiliga (plantillas y mercados independientes)
@@ -83,25 +83,19 @@ En una terminal de **PowerShell**, ejecuta el script de arranque:
 * Servirá la interfaz web de React en `http://localhost:5173/`, abriéndose automáticamente en tu navegador predeterminado.
 * Para usar el **Chatbot Míster AI**, asegúrate de tener el servicio de Ollama activo con tu modelo preferido (ej. `ollama run gemma2:2b`).
 
-### 3. Actualizar el Histórico y Evaluar el Modelo (CLI)
-Para descargar los datos de una nueva jornada, actualizar `data/historico_aprendizaje.csv` y reentrenar los 4 modelos XGBoost sin abrir la interfaz web:
-```powershell
-python main.py
-```
-* Es seguro ejecutar `main.py` (o usar el botón de refresco en la web) varias veces antes de que termine una jornada: el sistema identifica cada partido mediante `Game_ID` y `Round_ID`, por lo que no cerrará el `Target` prematuramente ni generará filas duplicadas.
-* Si pasa más de una jornada sin ejecutar el script (hasta un máximo de 5 jornadas recientes), recupera el resultado correspondiente de la ventana cronológica de Biwenger; si supera las 5 jornadas, descarta la fila pendiente antigua para no contaminar el histórico.
-
-Para evaluar la precisión actual del modelo mediante validación cruzada (*K-Fold* de 5 particiones) frente al baseline de `Media` simple:
-```powershell
-python core/evaluate_model.py
-```
-* La evaluación entrena en memoria (`save=False`) y **no sobrescribe** los modelos entrenados en `data/model_*.pkl`.
-
-Para reconstruir desde cero todas las jornadas disputadas de la temporada con orden cronológico exacto (usando caché local en `data/matches_cache/` y pausas automáticas para evitar límites `429` de Biwenger):
-```powershell
-python core/rebuild_historico.py
-```
-* Si Biwenger corta temporalmente por límite de peticiones (`HTTP 429`), los partidos ya descargados quedan cacheados; basta volver a lanzar el comando más tarde para reanudar donde lo dejó.
+### 3. Uso por CLI y Evaluación del Modelo
+* **Análisis y actualización por consola:** descarga los datos actuales de Biwenger, actualiza el histórico, reentrena los 4 modelos XGBoost y muestra las recomendaciones de alineación, fichajes y alertas:
+  ```powershell
+  python main.py
+  ```
+* **Evaluación de precisión:** mide el rendimiento frente a la media simple mediante validación temporal *Walk-Forward* (jornada a jornada) y validación cruzada *K-Fold*, registrando la evolución en `data/historial_evaluaciones.csv` y `data/evaluacion_por_jornada.csv`:
+  ```powershell
+  python core/evaluate_model.py
+  ```
+* **Reconstrucción del histórico de temporada:** descarga los partidos finalizados de la temporada desde la API de Biwenger (con caché local en `data/matches_cache/`), reconstruye `data/historico_aprendizaje.csv` y reentrena los modelos:
+  ```powershell
+  python core/rebuild_historico.py
+  ```
 
 ---
 
